@@ -1458,6 +1458,8 @@ def print_quiz_answer(answer, sentence):
         print(color_text("💡 备注：", YELLOW))
         print(note)
 
+    print("")
+
 
 def run_regular_quiz(count, tag=None, loop=False):
     sentences = load_quiz_sentences(OUTPUT_FILE)
