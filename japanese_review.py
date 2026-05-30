@@ -26,6 +26,28 @@ WRONG_BOOK_CSV = EXPORT_DIR / "wrong_book.csv"
 MASTERED_CSV = EXPORT_DIR / "mastered.csv"
 GRADUATION_THRESHOLD = 3
 SEPARATOR = "────────────────────────────"
+USE_COLOR = True
+RESET = "\033[0m"
+BOLD = "\033[1m"
+GREEN = "\033[32m"
+YELLOW = "\033[33m"
+BLUE = "\033[34m"
+CYAN = "\033[36m"
+MAGENTA = "\033[35m"
+RED = "\033[31m"
+GRAY = "\033[90m"
+
+
+def color_text(text, color):
+    if not USE_COLOR:
+        return text
+
+    return f"{color}{text}{RESET}"
+
+
+def set_color_enabled(enabled):
+    global USE_COLOR
+    USE_COLOR = enabled
 
 
 def configure_console_encoding():
@@ -49,9 +71,9 @@ def display_path(path):
 
 def print_header(title, mode=None):
     if mode:
-        print(f"{title}｜{mode}")
+        print(color_text(f"{title}｜{mode}", BOLD))
     else:
-        print(title)
+        print(color_text(title, BOLD))
     print(SEPARATOR)
 
 
@@ -62,7 +84,7 @@ def print_section(title):
 
 def print_card_title(title, icon="📌"):
     print("")
-    print(f"{icon} {title}")
+    print(color_text(f"{icon} {title}", BOLD))
     print(SEPARATOR)
 
 
@@ -71,15 +93,15 @@ def print_blank_line():
 
 
 def print_success(message):
-    print(f"✅ {message}")
+    print(color_text(f"✅ {message}", GREEN))
 
 
 def print_warning(message):
-    print(f"⚠️ 提示：{message}")
+    print(color_text(f"⚠️ 提示：{message}", YELLOW))
 
 
 def print_error(message):
-    print(f"❌ 错误：{message}")
+    print(color_text(f"❌ 错误：{message}", RED))
 
 
 def print_summary(items):
@@ -1313,7 +1335,8 @@ def run_check():
 
 def ask_self_assessment():
     while True:
-        assessment = input("这题掌握了吗？y/n，输入 q 退出：").strip().lower()
+        prompt = color_text("这题掌握了吗？y/n，输入 q 退出：", CYAN)
+        assessment = input(prompt).strip().lower()
 
         if assessment in ("y", "n", "q", "quit"):
             return assessment
@@ -1350,45 +1373,47 @@ def format_quiz_index(index, count, loop=False):
 
 def print_quiz_prompt(index, count, sentence, wrong_mode=False, loop=False):
     print("")
-    print(f"🎯 Quiz {format_quiz_index(index, count, loop)}")
+    print(color_text(f"🎯 Quiz {format_quiz_index(index, count, loop)}", BOLD))
     print(SEPARATOR)
     tag = get_entry_tag(sentence)
 
     if tag:
-        print(f"标签：{tag}")
+        print(f"{color_text('🏷️ 标签：', YELLOW)}{color_text(tag, BOLD)}")
 
     if wrong_mode:
-        print(f"当前掌握次数：{sentence.get('mastery_count', 0)}/{GRADUATION_THRESHOLD}")
+        mastery_text = f"当前掌握次数：{sentence.get('mastery_count', 0)}/{GRADUATION_THRESHOLD}"
+        print(color_text(mastery_text, YELLOW))
 
     print("")
-    print("中文：")
-    print(sentence["chinese"])
+    print(color_text("🇨🇳 中文：", CYAN))
+    print(color_text(sentence["chinese"], CYAN))
     print("")
-    return input("请输入日语，输入 q 退出：").strip()
+    prompt = color_text("请输入日语，输入 q 退出：", BOLD)
+    return input(prompt).strip()
 
 
 def print_quiz_answer(answer, sentence):
     print_card_title("参考答案", icon="📖")
-    print("你的输入：")
-    print(answer)
+    print(color_text("你的输入：", GRAY))
+    print(color_text(answer, GRAY))
     print("")
-    print("参考答案：")
-    print(sentence["japanese"])
+    print(color_text("✅ 参考答案：", GREEN))
+    print(color_text(sentence["japanese"], GREEN))
     print("")
-    print("中文意思：")
-    print(sentence["chinese"])
+    print(color_text("🇨🇳 中文意思：", CYAN))
+    print(color_text(sentence["chinese"], CYAN))
     grammar = get_entry_grammar(sentence)
     words = get_entry_words(sentence)
 
     if grammar:
         print("")
-        print("语法点：")
-        print(grammar)
+        print(color_text("📚 语法点：", YELLOW))
+        print(color_text(grammar, YELLOW))
 
     if words:
         print("")
-        print("重点单词：")
-        print(words)
+        print(color_text("📝 重点单词：", BLUE))
+        print(color_text(words, BLUE))
 
 
 def run_regular_quiz(count, tag=None, loop=False):
@@ -1537,6 +1562,7 @@ def parse_args():
     parser.add_argument("--add", nargs="*", metavar="文本", help="快速添加一句日语和中文意思")
     parser.add_argument("--clear-input", action="store_true", help="归档并清空输入文件")
     parser.add_argument("--no-prompt", action="store_true", help="普通模式结束后不询问清空输入文件")
+    parser.add_argument("--no-color", action="store_true", help="关闭 ANSI 彩色输出")
     parser.add_argument("--quiz", action="store_true", help="进入随机抽查模式")
     parser.add_argument("--loop", action="store_true", help="进入无限随机复习模式")
     parser.add_argument("--wrong", action="store_true", help="只复习错题本")
@@ -1561,6 +1587,7 @@ def parse_args():
 def main():
     configure_console_encoding()
     args = parse_args()
+    set_color_enabled(not args.no_color)
 
     if args.count < 1 and not args.loop:
         print_error("--count 需要是大于 0 的整数。")

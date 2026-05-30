@@ -4,7 +4,7 @@
 
 工具还会把每个新加入句子的复习次数保存到 `data.json`，并提供随机抽查 Quiz 模式帮助主动回忆。Quiz 后可以自评，把未掌握的句子沉淀到错题本；错题连续掌握后会自动进入已掌握本。统计模式可以查看当前学习积累。处理完成后可以归档并清空输入区，方便长期使用。标签功能可以按场景分类和抽查。V11 支持手动导入语法点和重点单词。还支持 CSV、Anki 导出和数据健康检查。
 
-V12.1 版本保持简单：不联网，不调用 AI，不做自动纠错，只使用 Python 标准库。V10.1 优化了终端输出格式，V10.2 在保留美观输出的基础上加固了 macOS 和 Windows 11 的路径、编码、CSV 导出兼容性。V12.1 优化了 console 输出格式，使快速添加、Quiz、统计、导出和健康检查的终端展示更加统一清晰。
+V12.2 版本保持简单：不联网，不调用 AI，不做自动纠错，只使用 Python 标准库。V10.1 优化了终端输出格式，V10.2 在保留美观输出的基础上加固了 macOS 和 Windows 11 的路径、编码、CSV 导出兼容性。V12.2 优化了 Quiz 模式的 console 显示，默认启用彩色高亮；如果终端颜色显示异常，可以使用 `--no-color` 关闭颜色。
 
 ## 如何填写 sentences.txt
 
@@ -295,6 +295,22 @@ python japanese_review.py --quiz --tag "工作" --loop
 ```
 
 `--loop` 会一直随机出题，直到输入 `q` 或 `quit` 退出。如果同时使用 `--loop` 和 `--count`，`--count` 会被忽略。
+
+Quiz 模式默认启用彩色高亮，参考答案、语法点、重点单词会更容易区分。如果终端颜色显示异常，可以使用 `--no-color` 关闭颜色。
+
+macOS：
+
+```bash
+python3 japanese_review.py --quiz --loop
+python3 japanese_review.py --quiz --loop --no-color
+```
+
+Windows 11：
+
+```powershell
+python japanese_review.py --quiz --loop
+python japanese_review.py --quiz --loop --no-color
+```
 
 Quiz 模式会优先从 `output/japanese_review.md` 中读取已经积累的句子。程序会随机显示中文意思，并让你输入对应的日语。
 
