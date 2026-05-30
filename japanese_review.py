@@ -3,6 +3,7 @@ import csv
 import json
 import random
 import sys
+from difflib import SequenceMatcher
 from datetime import date, datetime
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -157,6 +158,43 @@ def get_entry_words(entry):
 
 def get_entry_note(entry):
     return normalize_optional_text(entry.get("note", ""))
+
+
+def normalize_for_similarity(text):
+    return (
+        normalize_optional_text(text)
+        .replace(" ", "")
+        .replace("　", "")
+        .replace(".", "。")
+    )
+
+
+def calculate_similarity_score(answer, reference):
+    normalized_answer = normalize_for_similarity(answer)
+    normalized_reference = normalize_for_similarity(reference)
+
+    if not normalized_answer and not normalized_reference:
+        return 100
+
+    if not normalized_answer or not normalized_reference:
+        return 0
+
+    return round(
+        SequenceMatcher(None, normalized_answer, normalized_reference).ratio() * 100
+    )
+
+
+def get_similarity_feedback(score):
+    if score >= 95:
+        return "✅ 很好，基本完全正确", GREEN
+
+    if score >= 80:
+        return "🟡 接近正确，有少量差异", YELLOW
+
+    if score >= 60:
+        return "⚠️ 部分正确，需要复习", YELLOW
+
+    return "❌ 差异较大，建议加入错题", RED
 
 
 def read_sentences(input_file):
@@ -1527,12 +1565,18 @@ def print_quiz_prompt(index, count, sentence, wrong_mode=False, loop=False):
 
 
 def print_quiz_answer(answer, sentence):
+    similarity_score = calculate_similarity_score(answer, sentence["japanese"])
+    similarity_feedback, similarity_color = get_similarity_feedback(similarity_score)
+
     print_card_title("参考答案", icon="📖")
     print(color_text("你的输入：", GRAY))
     print(color_text(answer, GRAY))
     print("")
     print(color_text("✅ 参考答案：", GREEN))
     print(color_text(sentence["japanese"], GREEN))
+    print("")
+    print(color_text("📊 正确度：", similarity_color))
+    print(color_text(f"{similarity_score}%｜{similarity_feedback}", similarity_color))
     print("")
     print(color_text("🇨🇳 中文意思：", CYAN))
     print(color_text(sentence["chinese"], CYAN))
