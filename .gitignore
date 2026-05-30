@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.DS_Store
+.venv/
+venv/
+
+# 个人学习数据，建议不上传
+input/sentences.txt
+input/archive/
+output/data.json
