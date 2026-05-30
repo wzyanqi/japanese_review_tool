@@ -1743,9 +1743,152 @@ def run_quiz(count, wrong_only=False, tag=None, loop=False):
         run_regular_quiz(count, tag, loop)
 
 
+def is_quit_input(value):
+    return value.strip().lower() in {"q", "quit"}
+
+
+def read_menu_input(prompt):
+    try:
+        return input(prompt).strip()
+    except EOFError:
+        return "q"
+
+
+def print_menu():
+    print_header("📘 日语复习工具", "菜单模式")
+    print_blank_line()
+    print("请选择功能：")
+    print_blank_line()
+    print("1. 快速添加句子")
+    print("2. 随机复习 5 题")
+    print("3. 无限随机复习")
+    print("4. 错题复习 5 题")
+    print("5. 无限错题复习")
+    print("6. 查看学习统计")
+    print("7. 查看标签统计")
+    print("8. 数据健康检查")
+    print("9. 一键备份")
+    print("10. 导出 CSV")
+    print("11. 导出 Anki")
+    print("0. 退出")
+    print_blank_line()
+
+
+def wait_for_menu_return():
+    answer = read_menu_input("按回车返回菜单，输入 q 退出：")
+    return is_quit_input(answer)
+
+
+def read_menu_add_field(prompt, required=False, error_message=""):
+    value = read_menu_input(prompt)
+
+    if is_quit_input(value):
+        return None, True
+
+    if required and not value:
+        print_error(error_message)
+        return None, True
+
+    return value, False
+
+
+def run_menu_add():
+    japanese, canceled = read_menu_add_field(
+        "请输入日语句子：",
+        required=True,
+        error_message="日语句子不能为空。",
+    )
+
+    if canceled:
+        print_warning("已取消本次添加。")
+        return
+
+    chinese, canceled = read_menu_add_field(
+        "请输入中文意思：",
+        required=True,
+        error_message="中文意思不能为空。",
+    )
+
+    if canceled:
+        print_warning("已取消本次添加。")
+        return
+
+    tag, canceled = read_menu_add_field("请输入标签，可留空：")
+    if canceled:
+        print_warning("已取消本次添加。")
+        return
+
+    grammar, canceled = read_menu_add_field("请输入语法点，可留空：")
+    if canceled:
+        print_warning("已取消本次添加。")
+        return
+
+    words, canceled = read_menu_add_field("请输入重点单词，可留空：")
+    if canceled:
+        print_warning("已取消本次添加。")
+        return
+
+    note, canceled = read_menu_add_field("请输入备注，可留空：")
+    if canceled:
+        print_warning("已取消本次添加。")
+        return
+
+    run_add([japanese, chinese], tag, grammar, words, note)
+
+
+def run_menu_action(choice):
+    if choice == "1":
+        run_menu_add()
+    elif choice == "2":
+        run_quiz(5)
+    elif choice == "3":
+        run_quiz(1, loop=True)
+    elif choice == "4":
+        run_quiz(5, wrong_only=True)
+    elif choice == "5":
+        run_quiz(1, wrong_only=True, loop=True)
+    elif choice == "6":
+        run_stats()
+    elif choice == "7":
+        run_tags()
+    elif choice == "8":
+        run_check()
+    elif choice == "9":
+        run_backup()
+    elif choice == "10":
+        run_export_csv()
+    elif choice == "11":
+        run_export_anki()
+
+
+def run_menu():
+    valid_choices = {str(number) for number in range(1, 12)}
+
+    while True:
+        print_menu()
+        choice = read_menu_input("请输入数字：")
+
+        if choice == "0" or is_quit_input(choice):
+            print(color_text("👋 已退出菜单模式。", GREEN))
+            return
+
+        if choice not in valid_choices:
+            print_warning("请输入有效选项。")
+            print_blank_line()
+            continue
+
+        run_menu_action(choice)
+        print_blank_line()
+
+        if wait_for_menu_return():
+            print(color_text("👋 已退出菜单模式。", GREEN))
+            return
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="本地日语复习小工具")
     parser.add_argument("--add", nargs="*", metavar="文本", help="快速添加一句日语和中文意思")
+    parser.add_argument("--menu", action="store_true", help="进入菜单模式")
     parser.add_argument("--clear-input", action="store_true", help="归档并清空输入文件")
     parser.add_argument("--no-prompt", action="store_true", help="普通模式结束后不询问清空输入文件")
     parser.add_argument("--no-color", action="store_true", help="关闭 ANSI 彩色输出")
@@ -1781,7 +1924,9 @@ def main():
         print_error("--count 需要是大于 0 的整数。")
         return
 
-    if args.add is not None:
+    if args.menu:
+        run_menu()
+    elif args.add is not None:
         run_add(args.add, args.tag or "", args.grammar, args.words, args.note)
     elif args.clear_input:
         archive_and_clear_input()
