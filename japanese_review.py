@@ -2,6 +2,7 @@ import argparse
 import csv
 import json
 import random
+import shutil
 import sys
 from difflib import SequenceMatcher
 from datetime import date, datetime
@@ -1166,8 +1167,7 @@ def collect_backup_files(path):
     return files
 
 
-def run_backup():
-    print_header("📦 日语复习工具", "一键备份")
+def get_backup_targets():
     backup_targets = [
         DATA_FILE,
         BASE_DIR / "japanese_review.py",
@@ -1180,10 +1180,15 @@ def run_backup():
         DAILY_OUTPUT_DIR,
         EXPORT_DIR,
     ]
+
+    return backup_targets
+
+
+def create_backup():
     backup_files = []
     missing_items = []
 
-    for target in backup_targets:
+    for target in get_backup_targets():
         if not target.exists():
             missing_name = display_path(target)
 
@@ -1198,8 +1203,7 @@ def run_backup():
     unique_files = sorted(set(backup_files), key=lambda file_path: file_path.as_posix())
 
     if not unique_files:
-        print_warning("没有找到可备份的数据。")
-        return
+        return None, [], missing_items
 
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
@@ -1208,6 +1212,17 @@ def run_backup():
     with ZipFile(backup_file, "w", ZIP_DEFLATED) as zip_file:
         for file_path in unique_files:
             zip_file.write(file_path, file_path.relative_to(BASE_DIR).as_posix())
+
+    return backup_file, unique_files, missing_items
+
+
+def run_backup():
+    print_header("📦 日语复习工具", "一键备份")
+    backup_file, unique_files, missing_items = create_backup()
+
+    if not backup_file:
+        print_warning("没有找到可备份的数据。")
+        return
 
     print_success("备份完成")
     print_blank_line()
@@ -1228,6 +1243,147 @@ def run_backup():
 
         if len(missing_items) > 5:
             print(f"- 还有 {len(missing_items) - 5} 项未显示。")
+
+
+def is_safe_reset_target(path):
+    resolved_path = path.resolve()
+    protected_paths = {
+        BASE_DIR.resolve(),
+        BACKUP_DIR.resolve(),
+        (BASE_DIR / ".git").resolve(),
+    }
+
+    if resolved_path in protected_paths:
+        return False
+
+    try:
+        resolved_path.relative_to(BASE_DIR.resolve())
+    except ValueError:
+        return False
+
+    return True
+
+
+def clear_file(path):
+    if not is_safe_reset_target(path):
+        raise ValueError(f"拒绝清空不安全路径：{display_path(path)}")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("", encoding=TEXT_ENCODING)
+    return "cleared"
+
+
+def safe_delete_file(path):
+    if not is_safe_reset_target(path):
+        raise ValueError(f"拒绝删除不安全路径：{display_path(path)}")
+
+    if not path.exists():
+        return "missing"
+
+    if not path.is_file():
+        return "missing"
+
+    path.unlink()
+    return "deleted"
+
+
+def safe_delete_dir(path):
+    if not is_safe_reset_target(path):
+        raise ValueError(f"拒绝删除不安全路径：{display_path(path)}")
+
+    if not path.exists():
+        return "missing"
+
+    if not path.is_dir():
+        return "missing"
+
+    shutil.rmtree(path)
+    return "deleted"
+
+
+def confirm_reset():
+    print_warning("危险操作：即将清空所有学习数据。")
+    try:
+        answer = input("请输入 RESET 确认继续：").strip()
+    except EOFError:
+        return False
+
+    return answer == "RESET"
+
+
+def print_reset_summary(cleared_items, deleted_items, missing_count):
+    print_success("已恢复到初始状态")
+    print_blank_line()
+
+    for item in cleared_items:
+        print(f"已清空：{display_path(item)}")
+
+    for item in deleted_items:
+        suffix = "/" if item.suffix == "" else ""
+        print(f"已删除：{display_path(item)}{suffix}")
+
+    print("已保留：backup/")
+
+    if missing_count:
+        print(f"跳过缺失：{missing_count} 项")
+
+
+def run_reset(skip_confirm=False):
+    print_header("🧹 日语复习工具", "恢复初始状态")
+
+    if not skip_confirm and not confirm_reset():
+        print_warning("已取消 reset 操作。")
+        return
+
+    try:
+        backup_file, backup_files, _missing_items = create_backup()
+    except (OSError, ValueError) as error:
+        print_error(f"reset 前备份失败，已取消 reset 操作。{error}")
+        return
+
+    if not backup_file:
+        print_error("reset 前备份失败，已取消 reset 操作。")
+        return
+
+    print(color_text("📦 reset 前自动备份完成", GREEN))
+    print_field("文件位置", backup_file)
+    print_field("备份文件数", len(backup_files))
+    print_blank_line()
+
+    cleared_items = []
+    deleted_items = []
+    missing_count = 0
+    delete_targets = [
+        DATA_FILE,
+        OUTPUT_FILE,
+        WRONG_BOOK_FILE,
+        MASTERED_FILE,
+        DAILY_OUTPUT_DIR,
+        EXPORT_DIR,
+        INPUT_ARCHIVE_DIR,
+    ]
+
+    try:
+        clear_file(INPUT_FILE)
+        cleared_items.append(INPUT_FILE)
+
+        for target in delete_targets:
+            if target.is_dir() or (not target.exists() and target.suffix == ""):
+                result = safe_delete_dir(target)
+            else:
+                result = safe_delete_file(target)
+
+            if result == "deleted":
+                deleted_items.append(target)
+            elif result == "missing":
+                missing_count += 1
+
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    except (OSError, ValueError) as error:
+        print_error(f"reset 执行失败：{error}")
+        return
+
+    print_reset_summary(cleared_items, deleted_items, missing_count)
 
 
 def find_duplicates(values):
@@ -1906,6 +2062,8 @@ def parse_args():
     parser.add_argument("--export-anki", action="store_true", help="导出 Anki 导入 CSV")
     parser.add_argument("--check", action="store_true", help="检查复习数据健康状态")
     parser.add_argument("--backup", action="store_true", help="一键备份学习数据")
+    parser.add_argument("--reset", action="store_true", help="清空学习数据并恢复初始状态")
+    parser.add_argument("--yes", action="store_true", help="跳过 reset 二次确认")
     parser.add_argument(
         "--count",
         type=int,
@@ -1920,11 +2078,17 @@ def main():
     args = parse_args()
     set_color_enabled(not args.no_color)
 
+    if args.yes and not args.reset:
+        print_error("--yes 只能和 --reset 搭配使用。")
+        return
+
     if args.count < 1 and not args.loop:
         print_error("--count 需要是大于 0 的整数。")
         return
 
-    if args.menu:
+    if args.reset:
+        run_reset(skip_confirm=args.yes)
+    elif args.menu:
         run_menu()
     elif args.add is not None:
         run_add(args.add, args.tag or "", args.grammar, args.words, args.note)

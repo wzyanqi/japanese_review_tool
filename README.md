@@ -231,6 +231,12 @@ python3 japanese_review.py --export-csv --mastered
 python3 japanese_review.py --check
 ```
 
+恢复初始状态：
+
+```bash
+python3 japanese_review.py --reset
+```
+
 ## 菜单模式
 
 如果不想记命令，可以使用菜单模式：
@@ -496,6 +502,43 @@ backup/YYYY-MM-DD_HHMMSS_backup.zip
 - `japanese_review.py`
 
 `backup/` 目录本身不会被打包，避免备份文件无限变大。建议每周至少备份一次，或者在大批量新增句子前后备份一次。
+
+## 恢复初始状态
+
+`--reset` 是危险操作，会清空当前学习数据，让工具恢复到初始状态。执行前会要求输入 `RESET` 确认，并且会自动执行一次备份。
+
+macOS：
+
+```bash
+python3 japanese_review.py --reset
+```
+
+Windows 11：
+
+```powershell
+python japanese_review.py --reset
+```
+
+reset 会清空或删除：
+
+- `input/sentences.txt`
+- `data.json`
+- `input/archive/`
+- `output/japanese_review.md`
+- `output/wrong_book.md`
+- `output/mastered.md`
+- `output/daily/`
+- `output/export/`
+
+reset 会保留 `backup/` 目录，reset 前自动生成的备份也会保存在这里。
+
+调试或自动化测试时可以跳过确认：
+
+```bash
+python3 japanese_review.py --reset --yes
+```
+
+`--yes` 会跳过二次确认，仅建议在调试或自动化测试时使用。
 
 ## 数据导出
 
