@@ -654,6 +654,71 @@ def ask_clear_input():
         print_warning("请输入 y 或 n。")
 
 
+def print_add_usage():
+    print("用法：")
+    print('python3 japanese_review.py --add "日语句子" "中文意思" --tag "标签" --grammar "语法点" --words "重点单词"')
+
+
+def print_add_result(sentence):
+    print_success("添加成功")
+    print("")
+    print(f"日语：{sentence['japanese']}")
+    print(f"中文：{sentence['chinese']}")
+
+    if get_entry_tag(sentence):
+        print(f"标签：{get_entry_tag(sentence)}")
+
+    if get_entry_grammar(sentence):
+        print(f"语法点：{get_entry_grammar(sentence)}")
+
+    if get_entry_words(sentence):
+        print(f"重点单词：{get_entry_words(sentence)}")
+
+
+def run_add(add_values, tag="", grammar="", words=""):
+    if len(add_values) != 2:
+        print_error("--add 需要同时提供日语句子和中文意思。")
+        print_add_usage()
+        return
+
+    japanese = add_values[0].strip()
+    chinese = add_values[1].strip()
+
+    if not japanese:
+        print_error("日语句子不能为空。")
+        return
+
+    if not chinese:
+        print_error("中文意思不能为空。")
+        return
+
+    existing_japanese_sentences = load_existing_japanese_sentences(OUTPUT_FILE)
+
+    if japanese in existing_japanese_sentences:
+        print(f"⚠️ 已存在，跳过添加：{japanese}")
+        return
+
+    sentence = {
+        "japanese": japanese,
+        "chinese": chinese,
+        "tag": normalize_optional_text(tag),
+        "grammar": normalize_optional_text(grammar),
+        "words": normalize_optional_text(words),
+    }
+    review_data = load_review_data(DATA_FILE)
+    reviewed_sentences = update_review_counts([sentence], review_data)
+    save_review_data(DATA_FILE, review_data)
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    DAILY_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    review_date = date.today().isoformat()
+    daily_output_file = DAILY_OUTPUT_DIR / f"{review_date}.md"
+
+    append_review_file(OUTPUT_FILE, reviewed_sentences, review_date)
+    append_review_file(daily_output_file, reviewed_sentences, review_date)
+    print_add_result(reviewed_sentences[0])
+
+
 def run_review(no_prompt=False):
     print_header("📘 日语复习工具", "普通追加模式")
     sentences, total_lines, error_count, format_errors = read_sentences(INPUT_FILE)
@@ -1431,6 +1496,7 @@ def run_quiz(count, wrong_only=False, tag=None):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="本地日语复习小工具")
+    parser.add_argument("--add", nargs="*", metavar="文本", help="快速添加一句日语和中文意思")
     parser.add_argument("--clear-input", action="store_true", help="归档并清空输入文件")
     parser.add_argument("--no-prompt", action="store_true", help="普通模式结束后不询问清空输入文件")
     parser.add_argument("--quiz", action="store_true", help="进入随机抽查模式")
@@ -1439,6 +1505,8 @@ def parse_args():
     parser.add_argument("--stats", action="store_true", help="显示学习统计面板")
     parser.add_argument("--tags", action="store_true", help="显示标签统计")
     parser.add_argument("--tag", help="按指定标签抽查")
+    parser.add_argument("--grammar", default="", help="快速添加时填写语法点")
+    parser.add_argument("--words", default="", help="快速添加时填写重点单词")
     parser.add_argument("--export-csv", action="store_true", help="导出 CSV")
     parser.add_argument("--export-anki", action="store_true", help="导出 Anki 导入 CSV")
     parser.add_argument("--check", action="store_true", help="检查复习数据健康状态")
@@ -1459,7 +1527,9 @@ def main():
         print_error("--count 需要是大于 0 的整数。")
         return
 
-    if args.clear_input:
+    if args.add is not None:
+        run_add(args.add, args.tag or "", args.grammar, args.words)
+    elif args.clear_input:
         archive_and_clear_input()
     elif args.check:
         run_check()
