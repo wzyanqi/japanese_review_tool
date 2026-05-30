@@ -159,6 +159,12 @@ python3 japanese_review.py --quiz --wrong --loop
 python3 japanese_review.py --stats
 ```
 
+一键备份学习数据：
+
+```bash
+python3 japanese_review.py --backup
+```
+
 查看标签统计：
 
 ```bash
@@ -422,6 +428,41 @@ python3 japanese_review.py --quiz --wrong --tag 工作 --count 5
 ```
 
 如果旧数据里没有标签字段，程序会按空标签处理，不会报错。
+
+## 一键备份
+
+运行：
+
+```bash
+python3 japanese_review.py --backup
+```
+
+Windows 11：
+
+```powershell
+python japanese_review.py --backup
+```
+
+`--backup` 会将核心学习数据打包到：
+
+```text
+backup/YYYY-MM-DD_HHMMSS_backup.zip
+```
+
+备份内容包括：
+
+- `data.json`
+- `input/sentences.txt`
+- `input/archive/`
+- `output/japanese_review.md`
+- `output/wrong_book.md`
+- `output/mastered.md`
+- `output/daily/`
+- `output/export/`
+- `README.md`
+- `japanese_review.py`
+
+`backup/` 目录本身不会被打包，避免备份文件无限变大。建议每周至少备份一次，或者在大批量新增句子前后备份一次。
 
 ## 数据导出
 

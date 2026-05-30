@@ -9,3 +9,4 @@ input/archive/
 data.json
 output/*
 !output/.gitkeep
+backup/

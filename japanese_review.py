@@ -3,8 +3,9 @@ import csv
 import json
 import random
 import sys
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZipFile
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -24,6 +25,7 @@ JAPANESE_REVIEW_CSV = EXPORT_DIR / "japanese_review.csv"
 ANKI_IMPORT_CSV = EXPORT_DIR / "anki_import.csv"
 WRONG_BOOK_CSV = EXPORT_DIR / "wrong_book.csv"
 MASTERED_CSV = EXPORT_DIR / "mastered.csv"
+BACKUP_DIR = BASE_DIR / "backup"
 GRADUATION_THRESHOLD = 3
 SEPARATOR = "────────────────────────────"
 USE_COLOR = True
@@ -1095,6 +1097,101 @@ def run_export_csv(wrong=False, mastered=False):
         run_export_review_csv()
 
 
+def format_file_size(size):
+    if size >= 1024 * 1024:
+        return f"{size / (1024 * 1024):.1f} MB"
+
+    return f"{max(1, round(size / 1024))} KB"
+
+
+def should_skip_backup_path(path):
+    if path.name == ".DS_Store":
+        return True
+
+    if path.suffix == ".pyc":
+        return True
+
+    skip_names = {".git", "__pycache__", ".venv", "venv", "backup"}
+    return any(part in skip_names for part in path.relative_to(BASE_DIR).parts)
+
+
+def collect_backup_files(path):
+    if path.is_file():
+        return [] if should_skip_backup_path(path) else [path]
+
+    files = []
+
+    for child in sorted(path.rglob("*")):
+        if child.is_file() and not should_skip_backup_path(child):
+            files.append(child)
+
+    return files
+
+
+def run_backup():
+    print_header("📦 日语复习工具", "一键备份")
+    backup_targets = [
+        DATA_FILE,
+        BASE_DIR / "japanese_review.py",
+        BASE_DIR / "README.md",
+        INPUT_FILE,
+        INPUT_ARCHIVE_DIR,
+        OUTPUT_FILE,
+        WRONG_BOOK_FILE,
+        MASTERED_FILE,
+        DAILY_OUTPUT_DIR,
+        EXPORT_DIR,
+    ]
+    backup_files = []
+    missing_items = []
+
+    for target in backup_targets:
+        if not target.exists():
+            missing_name = display_path(target)
+
+            if target.suffix == "":
+                missing_name = f"{missing_name}/"
+
+            missing_items.append(missing_name)
+            continue
+
+        backup_files.extend(collect_backup_files(target))
+
+    unique_files = sorted(set(backup_files), key=lambda file_path: file_path.as_posix())
+
+    if not unique_files:
+        print_warning("没有找到可备份的数据。")
+        return
+
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    backup_file = BACKUP_DIR / f"{timestamp}_backup.zip"
+
+    with ZipFile(backup_file, "w", ZIP_DEFLATED) as zip_file:
+        for file_path in unique_files:
+            zip_file.write(file_path, file_path.relative_to(BASE_DIR).as_posix())
+
+    print_success("备份完成")
+    print_blank_line()
+    print_summary(
+        [
+            ("文件位置", backup_file),
+            ("备份文件数", len(unique_files)),
+            ("跳过缺失", len(missing_items)),
+            ("文件大小", format_file_size(backup_file.stat().st_size)),
+        ]
+    )
+
+    if missing_items:
+        print_card_title("跳过缺失项目")
+
+        for missing_item in missing_items[:5]:
+            print(f"- {missing_item}")
+
+        if len(missing_items) > 5:
+            print(f"- 还有 {len(missing_items) - 5} 项未显示。")
+
+
 def find_duplicates(values):
     seen = set()
     duplicates = []
@@ -1621,6 +1718,7 @@ def parse_args():
     parser.add_argument("--export-csv", action="store_true", help="导出 CSV")
     parser.add_argument("--export-anki", action="store_true", help="导出 Anki 导入 CSV")
     parser.add_argument("--check", action="store_true", help="检查复习数据健康状态")
+    parser.add_argument("--backup", action="store_true", help="一键备份学习数据")
     parser.add_argument(
         "--count",
         type=int,
@@ -1645,6 +1743,8 @@ def main():
         archive_and_clear_input()
     elif args.check:
         run_check()
+    elif args.backup:
+        run_backup()
     elif args.export_csv:
         run_export_csv(args.wrong, args.mastered)
     elif args.export_anki:
