@@ -60,6 +60,16 @@ def print_section(title):
     print(title)
 
 
+def print_card_title(title, icon="📌"):
+    print("")
+    print(f"{icon} {title}")
+    print(SEPARATOR)
+
+
+def print_blank_line():
+    print("")
+
+
 def print_success(message):
     print(f"✅ {message}")
 
@@ -76,6 +86,18 @@ def print_summary(items):
     for label, value in items:
         value = display_path(value)
         print(f"{label}：{value}")
+
+
+def print_field(label, value):
+    value = display_path(value)
+    print(f"{label}：{value}")
+
+
+def print_optional_field(label, value):
+    value = normalize_optional_text(value)
+
+    if value:
+        print_field(label, value)
 
 
 def normalize_optional_text(value):
@@ -661,23 +683,20 @@ def print_add_usage():
 
 def print_add_result(sentence):
     print_success("添加成功")
-    print("")
-    print(f"日语：{sentence['japanese']}")
-    print(f"中文：{sentence['chinese']}")
-
-    if get_entry_tag(sentence):
-        print(f"标签：{get_entry_tag(sentence)}")
-
-    if get_entry_grammar(sentence):
-        print(f"语法点：{get_entry_grammar(sentence)}")
-
-    if get_entry_words(sentence):
-        print(f"重点单词：{get_entry_words(sentence)}")
+    print_card_title("本次添加")
+    print_field("日语", sentence["japanese"])
+    print_field("中文", sentence["chinese"])
+    print_optional_field("标签", get_entry_tag(sentence))
+    print_optional_field("语法点", get_entry_grammar(sentence))
+    print_optional_field("重点单词", get_entry_words(sentence))
 
 
 def run_add(add_values, tag="", grammar="", words=""):
+    print_header("📘 日语复习工具", "快速添加")
+
     if len(add_values) != 2:
         print_error("--add 需要同时提供日语句子和中文意思。")
+        print_blank_line()
         print_add_usage()
         return
 
@@ -695,7 +714,7 @@ def run_add(add_values, tag="", grammar="", words=""):
     existing_japanese_sentences = load_existing_japanese_sentences(OUTPUT_FILE)
 
     if japanese in existing_japanese_sentences:
-        print(f"⚠️ 已存在，跳过添加：{japanese}")
+        print_warning(f"已存在，跳过添加：{japanese}")
         return
 
     sentence = {
@@ -757,20 +776,21 @@ def run_review(no_prompt=False):
         print_warning("没有新增句子，未追加复习文件。")
 
     if duplicate_sentences:
-        print_section("跳过重复句子")
+        print_card_title("跳过重复句子")
         for sentence in duplicate_sentences[:5]:
             print(f"- {sentence}")
         if len(duplicate_sentences) > 5:
-            print(f"- 还有 {len(duplicate_sentences) - 5} 句未显示。")
+            print(f"- 还有 {len(duplicate_sentences) - 5} 条未显示。")
 
     if format_errors:
-        print_section("格式错误")
+        print_card_title("格式错误")
         for error in format_errors[:5]:
             print(f"- {error}")
         if len(format_errors) > 5:
-            print(f"- 还有 {len(format_errors) - 5} 行错误未显示。")
+            print(f"- 还有 {len(format_errors) - 5} 条未显示。")
 
     print_section("✅ 运行完成")
+    print_blank_line()
     print_summary(
         [
             ("本次读取", f"{total_lines} 行"),
@@ -834,22 +854,21 @@ def run_stats():
     if total_count == 0:
         print_warning("还没有积累句子，请先添加句子并运行普通模式。")
 
-    if tag_counts:
-        print("")
-        print_summary([("标签总数", len(tag_counts))])
-        top_tags = sorted(tag_counts.items(), key=lambda item: item[1], reverse=True)[:5]
-        top_tags_text = "，".join(f"{tag}：{count}" for tag, count in top_tags)
-        print(f"句子最多的前 5 个标签：{top_tags_text}")
-
-    print("")
+    print_blank_line()
     if wrong_rate is not None:
         print(f"当前错题率：{wrong_rate}")
 
     if graduation_rate is not None:
         print(f"错题毕业率：{graduation_rate}")
 
-    print("")
-    print("建议：")
+    if tag_counts:
+        print_card_title("标签概览")
+        print_summary([("标签总数", len(tag_counts))])
+        top_tags = sorted(tag_counts.items(), key=lambda item: item[1], reverse=True)[:5]
+        top_tags_text = "，".join(f"{tag}：{count}" for tag, count in top_tags)
+        print(f"句子最多的前 5 个标签：{top_tags_text}")
+
+    print_card_title("建议")
     print(build_stats_advice(wrong_count))
 
 
@@ -876,6 +895,7 @@ def write_csv(output_file, fieldnames, rows):
         writer.writerows(rows)
 
     print_success("导出完成")
+    print_blank_line()
     print_summary(
         [
             ("文件位置", output_file),
@@ -1189,23 +1209,23 @@ def collect_tag_issues(entries):
 
 def print_limited_issues(issues, limit=5):
     if not issues:
-        print("   关键问题：无")
+        print("关键问题：无")
         return
 
-    print("   关键问题：")
+    print("关键问题：")
     for issue in issues[:limit]:
-        print(f"   * {issue}")
+        print(f"* {issue}")
 
     if len(issues) > limit:
-        print(f"   * 还有 {len(issues) - limit} 个问题未显示。")
+        print(f"* 还有 {len(issues) - limit} 个问题未显示。")
 
 
 def print_check_section(title, status_count_label, count, issues):
-    print_section(title)
+    print_card_title(title)
     status = "✅ 正常" if not issues else "⚠️ 有问题"
-    print(f"   状态：{status}")
-    print(f"   {status_count_label}：{count}")
-    print(f"   问题数量：{len(issues)}")
+    print_field("状态", status)
+    print_field(status_count_label, count)
+    print_field("问题数量", len(issues))
     print_limited_issues(issues)
 
 
@@ -1282,7 +1302,7 @@ def run_check():
     print_check_section("4. 标签检查", "标签数量", len(all_tags), tag_issues)
     all_issues.extend(tag_issues)
 
-    print_section("5. 总体建议")
+    print_card_title("5. 总体建议")
 
     if all_issues:
         print(f"* 发现 {len(all_issues)} 个需要关注的问题。")
@@ -1309,6 +1329,7 @@ def print_quiz_summary(
     graduated_count,
 ):
     print_section("✅ Quiz 结束")
+    print_blank_line()
     print_summary(
         [
             ("本次抽查", f"{asked_count} 题"),
@@ -1323,6 +1344,7 @@ def print_quiz_summary(
 def print_quiz_prompt(index, count, sentence, wrong_mode=False):
     print("")
     print(f"🎯 Quiz {index}/{count}")
+    print(SEPARATOR)
     tag = get_entry_tag(sentence)
 
     if tag:
@@ -1339,7 +1361,7 @@ def print_quiz_prompt(index, count, sentence, wrong_mode=False):
 
 
 def print_quiz_answer(answer, sentence):
-    print("")
+    print_card_title("参考答案", icon="📖")
     print("你的输入：")
     print(answer)
     print("")
