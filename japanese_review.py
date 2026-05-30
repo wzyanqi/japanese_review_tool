@@ -1450,8 +1450,8 @@ def print_quiz_answer(answer, sentence):
 
     if words:
         print("")
-        print(color_text("📝 重点单词：", BLUE))
-        print(color_text(words, BLUE))
+        print(color_text("📝 重点单词：", CYAN))
+        print(color_text(words, BOLD))
 
     if note:
         print("")
