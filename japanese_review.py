@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 BASE_DIR = Path(__file__).resolve().parent
-DEFAULT_TAG = "未分类"
+DEFAULT_TAG = ""
 TEXT_ENCODING = "utf-8"
 CSV_ENCODING = "utf-8-sig"
 INPUT_FILE = BASE_DIR / "input" / "sentences.txt"
@@ -78,6 +78,36 @@ def print_summary(items):
         print(f"{label}：{value}")
 
 
+def normalize_optional_text(value):
+    return value.strip() if value else ""
+
+
+def add_optional_markdown_lines(lines, entry):
+    optional_fields = [
+        ("标签", entry.get("tag", "")),
+        ("语法点", entry.get("grammar", "")),
+        ("重点单词", entry.get("words", "")),
+    ]
+
+    for label, value in optional_fields:
+        value = normalize_optional_text(value)
+
+        if value:
+            lines.append(f"- {label}：{value}")
+
+
+def get_entry_tag(entry):
+    return normalize_optional_text(entry.get("tag", ""))
+
+
+def get_entry_grammar(entry):
+    return normalize_optional_text(entry.get("grammar", ""))
+
+
+def get_entry_words(entry):
+    return normalize_optional_text(entry.get("words", ""))
+
+
 def read_sentences(input_file):
     sentences = []
     total_lines = 0
@@ -103,9 +133,16 @@ def read_sentences(input_file):
                 error_count += 1
                 continue
 
+            if len(parts) > 5:
+                format_errors.append(f"第 {line_number} 行：字段过多，最多支持 5 个字段")
+                error_count += 1
+                continue
+
             japanese = parts[0]
             chinese = parts[1]
-            tag = parts[2] if len(parts) >= 3 and parts[2] else DEFAULT_TAG
+            tag = parts[2] if len(parts) >= 3 else ""
+            grammar = parts[3] if len(parts) >= 4 else ""
+            words = parts[4] if len(parts) >= 5 else ""
 
             if not japanese or not chinese:
                 format_errors.append(f"第 {line_number} 行：日语或中文内容为空")
@@ -116,7 +153,9 @@ def read_sentences(input_file):
                 {
                     "japanese": japanese,
                     "chinese": chinese,
-                    "tag": tag,
+                    "tag": normalize_optional_text(tag),
+                    "grammar": normalize_optional_text(grammar),
+                    "words": normalize_optional_text(words),
                 }
             )
 
@@ -158,6 +197,8 @@ def load_quiz_sentences(output_file):
                     "japanese": line.removeprefix("- 日语：").strip(),
                     "chinese": "",
                     "tag": DEFAULT_TAG,
+                    "grammar": "",
+                    "words": "",
                 }
                 continue
 
@@ -169,6 +210,10 @@ def load_quiz_sentences(output_file):
             elif line.startswith("- 标签："):
                 tag = line.removeprefix("- 标签：").strip()
                 current_sentence["tag"] = tag or DEFAULT_TAG
+            elif line.startswith("- 语法点："):
+                current_sentence["grammar"] = line.removeprefix("- 语法点：").strip()
+            elif line.startswith("- 重点单词："):
+                current_sentence["words"] = line.removeprefix("- 重点单词：").strip()
 
     if current_sentence:
         sentences.append(current_sentence)
@@ -200,6 +245,8 @@ def load_review_entries(output_file):
                     "japanese": line.removeprefix("- 日语：").strip(),
                     "chinese": "",
                     "tag": DEFAULT_TAG,
+                    "grammar": "",
+                    "words": "",
                     "status": "待复习",
                     "date": current_section_date,
                 }
@@ -213,6 +260,10 @@ def load_review_entries(output_file):
             elif line.startswith("- 标签："):
                 tag = line.removeprefix("- 标签：").strip()
                 current_entry["tag"] = tag or DEFAULT_TAG
+            elif line.startswith("- 语法点："):
+                current_entry["grammar"] = line.removeprefix("- 语法点：").strip()
+            elif line.startswith("- 重点单词："):
+                current_entry["words"] = line.removeprefix("- 重点单词：").strip()
             elif line.startswith("- 状态："):
                 status = line.removeprefix("- 状态：").strip()
                 current_entry["status"] = status or "待复习"
@@ -247,6 +298,8 @@ def load_wrong_book_entries():
                     "japanese": line.removeprefix("- 日语：").strip(),
                     "chinese": "",
                     "tag": DEFAULT_TAG,
+                    "grammar": "",
+                    "words": "",
                     "added_date": current_section_date,
                     "mastery_count": 0,
                     "status": "待复习",
@@ -261,6 +314,10 @@ def load_wrong_book_entries():
             elif line.startswith("- 标签："):
                 tag = line.removeprefix("- 标签：").strip()
                 current_entry["tag"] = tag or DEFAULT_TAG
+            elif line.startswith("- 语法点："):
+                current_entry["grammar"] = line.removeprefix("- 语法点：").strip()
+            elif line.startswith("- 重点单词："):
+                current_entry["words"] = line.removeprefix("- 重点单词：").strip()
             elif line.startswith("- 加入日期："):
                 current_entry["added_date"] = line.removeprefix("- 加入日期：").strip()
             elif line.startswith("- 掌握次数："):
@@ -303,6 +360,8 @@ def load_mastered_entries():
                     "japanese": line.removeprefix("- 日语：").strip(),
                     "chinese": "",
                     "tag": DEFAULT_TAG,
+                    "grammar": "",
+                    "words": "",
                     "wrong_date": "",
                     "mastered_date": current_section_date,
                     "status": "已掌握",
@@ -317,6 +376,10 @@ def load_mastered_entries():
             elif line.startswith("- 标签："):
                 tag = line.removeprefix("- 标签：").strip()
                 current_entry["tag"] = tag or DEFAULT_TAG
+            elif line.startswith("- 语法点："):
+                current_entry["grammar"] = line.removeprefix("- 语法点：").strip()
+            elif line.startswith("- 重点单词："):
+                current_entry["words"] = line.removeprefix("- 重点单词：").strip()
             elif line.startswith("- 首次加入错题本日期："):
                 current_entry["wrong_date"] = line.removeprefix("- 首次加入错题本日期：").strip()
             elif line.startswith("- 掌握日期："):
@@ -342,7 +405,12 @@ def save_wrong_book_entries(entries):
             file.write(f"## {entry['added_date']}\n\n")
             file.write(f"- 日语：{entry['japanese']}\n")
             file.write(f"- 中文：{entry['chinese']}\n")
-            file.write(f"- 标签：{entry.get('tag', DEFAULT_TAG)}\n")
+            optional_lines = []
+            add_optional_markdown_lines(optional_lines, entry)
+
+            for line in optional_lines:
+                file.write(f"{line}\n")
+
             file.write(f"- 加入日期：{entry['added_date']}\n")
             file.write(f"- 掌握次数：{entry['mastery_count']}\n")
             file.write("- 状态：待复习\n")
@@ -369,7 +437,12 @@ def append_mastered(entry):
         file.write(f"## {mastered_date}\n\n")
         file.write(f"- 日语：{japanese}\n")
         file.write(f"- 中文：{entry['chinese']}\n")
-        file.write(f"- 标签：{entry.get('tag', DEFAULT_TAG)}\n")
+        optional_lines = []
+        add_optional_markdown_lines(optional_lines, entry)
+
+        for line in optional_lines:
+            file.write(f"{line}\n")
+
         file.write(f"- 首次加入错题本日期：{entry['added_date']}\n")
         file.write(f"- 掌握日期：{mastered_date}\n")
         file.write("- 状态：已掌握\n")
@@ -417,7 +490,9 @@ def update_review_counts(sentences, data):
         record = {
             "japanese": japanese,
             "chinese": chinese,
-            "tag": sentence.get("tag", DEFAULT_TAG),
+            "tag": get_entry_tag(sentence),
+            "grammar": get_entry_grammar(sentence),
+            "words": get_entry_words(sentence),
             "review_count": review_count,
         }
 
@@ -440,7 +515,11 @@ def build_review_section(sentences, review_date):
                 "",
                 f"- 日语：{sentence['japanese']}",
                 f"- 中文：{sentence['chinese']}",
-                f"- 标签：{sentence.get('tag', DEFAULT_TAG)}",
+            ]
+        )
+        add_optional_markdown_lines(lines, sentence)
+        lines.extend(
+            [
                 "- 状态：待复习",
                 f"- 复习次数：{sentence['review_count']}",
                 "",
@@ -479,7 +558,9 @@ def append_wrong_book(sentence):
         {
             "japanese": japanese,
             "chinese": sentence["chinese"],
-            "tag": sentence.get("tag", DEFAULT_TAG),
+            "tag": get_entry_tag(sentence),
+            "grammar": get_entry_grammar(sentence),
+            "words": get_entry_words(sentence),
             "added_date": date.today().isoformat(),
             "mastery_count": 0,
             "status": "待复习",
@@ -494,14 +575,18 @@ def filter_sentences_by_tag(sentences, tag):
     if not tag:
         return sentences
 
-    return [sentence for sentence in sentences if sentence.get("tag", DEFAULT_TAG) == tag]
+    return [sentence for sentence in sentences if get_entry_tag(sentence) == tag]
 
 
 def build_tag_counts(sentences):
     tag_counts = {}
 
     for sentence in sentences:
-        tag = sentence.get("tag", DEFAULT_TAG) or DEFAULT_TAG
+        tag = get_entry_tag(sentence)
+
+        if not tag:
+            continue
+
         tag_counts[tag] = tag_counts.get(tag, 0) + 1
 
     return tag_counts
@@ -651,14 +736,21 @@ def build_stats_advice(wrong_count):
     return "暂无错题，可以继续添加新句子或做普通 quiz。"
 
 
+def count_filled_field(entries, field_name):
+    return sum(1 for entry in entries if normalize_optional_text(entry.get(field_name, "")))
+
+
 def run_stats():
     today = date.today().isoformat()
     daily_output_file = DAILY_OUTPUT_DIR / f"{today}.md"
-    total_count = len(load_quiz_sentences(OUTPUT_FILE))
+    review_entries = load_quiz_sentences(OUTPUT_FILE)
+    total_count = len(review_entries)
     wrong_count = len(load_wrong_book_entries())
     mastered_count = len(load_quiz_sentences(MASTERED_FILE))
     today_new_count = len(load_quiz_sentences(daily_output_file))
-    tag_counts = build_tag_counts(load_quiz_sentences(OUTPUT_FILE))
+    grammar_count = count_filled_field(review_entries, "grammar")
+    words_count = count_filled_field(review_entries, "words")
+    tag_counts = build_tag_counts(review_entries)
     wrong_rate = format_percentage(wrong_count, total_count)
     graduation_rate = format_percentage(mastered_count, wrong_count + mastered_count)
 
@@ -669,6 +761,8 @@ def run_stats():
             ("当前错题数", wrong_count),
             ("已掌握错题数", mastered_count),
             ("今日新增句子", today_new_count),
+            ("已填写语法点", grammar_count),
+            ("已填写重点单词", words_count),
         ]
     )
 
@@ -736,18 +830,34 @@ def run_export_review_csv():
         print_no_export_data()
         return
 
-    fieldnames = ["japanese", "chinese", "tag", "status", "date"]
+    fieldnames = ["japanese", "chinese", "tag", "grammar", "words", "status", "date"]
     rows = [
         {
             "japanese": entry["japanese"],
             "chinese": entry["chinese"],
-            "tag": entry.get("tag", DEFAULT_TAG),
+            "tag": get_entry_tag(entry),
+            "grammar": get_entry_grammar(entry),
+            "words": get_entry_words(entry),
             "status": entry.get("status", "待复习"),
             "date": entry.get("date", ""),
         }
         for entry in entries
     ]
     write_csv(JAPANESE_REVIEW_CSV, fieldnames, rows)
+
+
+def build_anki_back(entry):
+    lines = [entry["japanese"]]
+    grammar = get_entry_grammar(entry)
+    words = get_entry_words(entry)
+
+    if grammar:
+        lines.extend(["", f"语法点：{grammar}"])
+
+    if words:
+        lines.extend(["", f"重点单词：{words}"])
+
+    return "\n".join(lines)
 
 
 def run_export_anki():
@@ -761,8 +871,8 @@ def run_export_anki():
     rows = [
         {
             "front": entry["chinese"],
-            "back": entry["japanese"],
-            "tag": entry.get("tag", DEFAULT_TAG),
+            "back": build_anki_back(entry),
+            "tag": get_entry_tag(entry),
         }
         for entry in entries
     ]
@@ -776,12 +886,23 @@ def run_export_wrong_csv():
         print_no_export_data()
         return
 
-    fieldnames = ["japanese", "chinese", "tag", "added_date", "review_count", "status"]
+    fieldnames = [
+        "japanese",
+        "chinese",
+        "tag",
+        "grammar",
+        "words",
+        "added_date",
+        "review_count",
+        "status",
+    ]
     rows = [
         {
             "japanese": entry["japanese"],
             "chinese": entry["chinese"],
-            "tag": entry.get("tag", DEFAULT_TAG),
+            "tag": get_entry_tag(entry),
+            "grammar": get_entry_grammar(entry),
+            "words": get_entry_words(entry),
             "added_date": entry.get("added_date", ""),
             "review_count": entry.get("mastery_count", 0),
             "status": entry.get("status", "待复习"),
@@ -798,12 +919,23 @@ def run_export_mastered_csv():
         print_no_export_data()
         return
 
-    fieldnames = ["japanese", "chinese", "tag", "wrong_date", "mastered_date", "status"]
+    fieldnames = [
+        "japanese",
+        "chinese",
+        "tag",
+        "grammar",
+        "words",
+        "wrong_date",
+        "mastered_date",
+        "status",
+    ]
     rows = [
         {
             "japanese": entry["japanese"],
             "chinese": entry["chinese"],
-            "tag": entry.get("tag", DEFAULT_TAG),
+            "tag": get_entry_tag(entry),
+            "grammar": get_entry_grammar(entry),
+            "words": get_entry_words(entry),
             "wrong_date": entry.get("wrong_date", ""),
             "mastered_date": entry.get("mastered_date", ""),
             "status": entry.get("status", "已掌握"),
@@ -877,6 +1009,8 @@ def parse_markdown_entries_for_check(file_path, defaults):
                     "japanese": line.removeprefix("- 日语：").strip(),
                     "chinese": "",
                     "tag": defaults["tag"],
+                    "grammar": "",
+                    "words": "",
                     "status": defaults["status"],
                     "date": current_section_date,
                     "added_date": current_section_date,
@@ -907,6 +1041,10 @@ def parse_markdown_entries_for_check(file_path, defaults):
                 current_entry["raw_tags"].append(raw_tag)
                 current_entry["has_tag"] = True
                 current_entry["tag"] = raw_tag.strip()
+            elif line.startswith("- 语法点："):
+                current_entry["grammar"] = line.removeprefix("- 语法点：").strip()
+            elif line.startswith("- 重点单词："):
+                current_entry["words"] = line.removeprefix("- 重点单词：").strip()
             elif line.startswith("- 状态："):
                 current_entry["has_status"] = True
                 current_entry["status"] = line.removeprefix("- 状态：").strip()
@@ -970,12 +1108,6 @@ def collect_tag_issues(entries):
     for entry in entries:
         tag = entry.get("tag", "")
 
-        if not entry.get("has_tag", True):
-            issues.append(f"「{entry.get('japanese', '未知句子')}」缺少标签字段。")
-
-        if tag == "":
-            issues.append(f"「{entry.get('japanese', '未知句子')}」存在空标签。")
-
         for raw_tag in entry.get("raw_tags", []):
             if raw_tag != raw_tag.strip():
                 issues.append(f"标签「{raw_tag}」前后存在多余空格。")
@@ -1023,11 +1155,6 @@ def run_check():
         review_entries, review_issues = parse_review_for_check(OUTPUT_FILE)
         review_duplicates = find_duplicates([entry["japanese"] for entry in review_entries])
         review_issues.extend(f"重复日语句子：{sentence}" for sentence in review_duplicates)
-        review_issues.extend(
-            f"「{entry['japanese'] or '未知句子'}」缺少标签字段。"
-            for entry in review_entries
-            if not entry["has_tag"]
-        )
 
     print_check_section("1. 总复习本检查", "总句子数", len(review_entries), review_issues)
     all_issues.extend(review_issues)
@@ -1131,7 +1258,10 @@ def print_quiz_summary(
 def print_quiz_prompt(index, count, sentence, wrong_mode=False):
     print("")
     print(f"🎯 Quiz {index}/{count}")
-    print(f"标签：{sentence.get('tag', DEFAULT_TAG)}")
+    tag = get_entry_tag(sentence)
+
+    if tag:
+        print(f"标签：{tag}")
 
     if wrong_mode:
         print(f"当前掌握次数：{sentence.get('mastery_count', 0)}/{GRADUATION_THRESHOLD}")
@@ -1153,6 +1283,18 @@ def print_quiz_answer(answer, sentence):
     print("")
     print("中文意思：")
     print(sentence["chinese"])
+    grammar = get_entry_grammar(sentence)
+    words = get_entry_words(sentence)
+
+    if grammar:
+        print("")
+        print("语法点：")
+        print(grammar)
+
+    if words:
+        print("")
+        print("重点单词：")
+        print(words)
 
 
 def run_regular_quiz(count, tag=None):
