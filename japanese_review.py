@@ -1341,9 +1341,16 @@ def print_quiz_summary(
     )
 
 
-def print_quiz_prompt(index, count, sentence, wrong_mode=False):
+def format_quiz_index(index, count, loop=False):
+    if loop:
+        return str(index)
+
+    return f"{index}/{count}"
+
+
+def print_quiz_prompt(index, count, sentence, wrong_mode=False, loop=False):
     print("")
-    print(f"🎯 Quiz {index}/{count}")
+    print(f"🎯 Quiz {format_quiz_index(index, count, loop)}")
     print(SEPARATOR)
     tag = get_entry_tag(sentence)
 
@@ -1384,7 +1391,7 @@ def print_quiz_answer(answer, sentence):
         print(words)
 
 
-def run_regular_quiz(count, tag=None):
+def run_regular_quiz(count, tag=None, loop=False):
     sentences = load_quiz_sentences(OUTPUT_FILE)
     sentences = filter_sentences_by_tag(sentences, tag)
 
@@ -1392,7 +1399,7 @@ def run_regular_quiz(count, tag=None):
         if tag:
             print_no_tag_message(tag)
         else:
-            print_warning("没有可抽查的句子，请先添加句子并运行普通模式。")
+            print_warning("没有可抽查的句子，请先添加句子。")
         return
 
     print_header("📘 日语复习工具", "Quiz 模式")
@@ -1400,12 +1407,13 @@ def run_regular_quiz(count, tag=None):
     mastered_count = 0
     new_wrong_count = 0
     duplicate_wrong_count = 0
+    index = 1
 
-    for index in range(1, count + 1):
+    while loop or index <= count:
         sentence = random.choice(sentences)
         asked_count += 1
 
-        answer = print_quiz_prompt(index, count, sentence)
+        answer = print_quiz_prompt(index, count, sentence, loop=loop)
 
         if answer.lower() in ("q", "quit"):
             print_quiz_summary(
@@ -1441,6 +1449,8 @@ def run_regular_quiz(count, tag=None):
             else:
                 duplicate_wrong_count += 1
 
+        index += 1
+
     print_quiz_summary(
         asked_count,
         mastered_count,
@@ -1450,7 +1460,7 @@ def run_regular_quiz(count, tag=None):
     )
 
 
-def run_wrong_quiz(count, tag=None):
+def run_wrong_quiz(count, tag=None, loop=False):
     entries = load_wrong_book_entries()
     entries = filter_sentences_by_tag(entries, tag)
 
@@ -1465,8 +1475,9 @@ def run_wrong_quiz(count, tag=None):
     asked_count = 0
     mastered_count = 0
     graduated_count = 0
+    index = 1
 
-    for index in range(1, count + 1):
+    while loop or index <= count:
         if not entries:
             print_success("错题本已经清空。")
             break
@@ -1474,7 +1485,7 @@ def run_wrong_quiz(count, tag=None):
         entry = random.choice(entries)
         asked_count += 1
 
-        answer = print_quiz_prompt(index, count, entry, wrong_mode=True)
+        answer = print_quiz_prompt(index, count, entry, wrong_mode=True, loop=loop)
 
         if answer.lower() in ("q", "quit"):
             save_wrong_book_entries(entries)
@@ -1505,15 +1516,20 @@ def run_wrong_quiz(count, tag=None):
                 else:
                     print_success(f"这条错题已从错题本移除：{entry['japanese']}")
 
+        index += 1
+
     save_wrong_book_entries(entries)
     print_quiz_summary(asked_count, mastered_count, 0, 0, graduated_count)
 
 
-def run_quiz(count, wrong_only=False, tag=None):
+def run_quiz(count, wrong_only=False, tag=None, loop=False):
+    if loop and count != 1:
+        print_warning("已启用 --loop，将忽略 --count。")
+
     if wrong_only:
-        run_wrong_quiz(count, tag)
+        run_wrong_quiz(count, tag, loop)
     else:
-        run_regular_quiz(count, tag)
+        run_regular_quiz(count, tag, loop)
 
 
 def parse_args():
@@ -1522,6 +1538,7 @@ def parse_args():
     parser.add_argument("--clear-input", action="store_true", help="归档并清空输入文件")
     parser.add_argument("--no-prompt", action="store_true", help="普通模式结束后不询问清空输入文件")
     parser.add_argument("--quiz", action="store_true", help="进入随机抽查模式")
+    parser.add_argument("--loop", action="store_true", help="进入无限随机复习模式")
     parser.add_argument("--wrong", action="store_true", help="只复习错题本")
     parser.add_argument("--mastered", action="store_true", help="导出已掌握本")
     parser.add_argument("--stats", action="store_true", help="显示学习统计面板")
@@ -1545,7 +1562,7 @@ def main():
     configure_console_encoding()
     args = parse_args()
 
-    if args.count < 1:
+    if args.count < 1 and not args.loop:
         print_error("--count 需要是大于 0 的整数。")
         return
 
@@ -1564,7 +1581,7 @@ def main():
     elif args.stats:
         run_stats()
     elif args.quiz:
-        run_quiz(args.count, args.wrong, args.tag)
+        run_quiz(args.count, args.wrong, args.tag, args.loop)
     else:
         run_review(args.no_prompt)
 

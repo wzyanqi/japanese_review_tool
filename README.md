@@ -126,6 +126,12 @@ python3 japanese_review.py --quiz
 python3 japanese_review.py --quiz --count 5
 ```
 
+无限随机复习，直到输入 `q` 或 `quit` 退出：
+
+```bash
+python3 japanese_review.py --quiz --loop
+```
+
 只复习错题：
 
 ```bash
@@ -136,6 +142,12 @@ python3 japanese_review.py --quiz --wrong
 
 ```bash
 python3 japanese_review.py --quiz --wrong --count 5
+```
+
+无限复习错题，直到输入 `q` 或 `quit` 退出：
+
+```bash
+python3 japanese_review.py --quiz --wrong --loop
 ```
 
 查看学习统计：
@@ -154,6 +166,12 @@ python3 japanese_review.py --tags
 
 ```bash
 python3 japanese_review.py --quiz --tag 工作
+```
+
+按标签无限抽查：
+
+```bash
+python3 japanese_review.py --quiz --tag 工作 --loop
 ```
 
 按标签连续抽查 5 题：
@@ -257,6 +275,26 @@ python3 japanese_review.py --quiz --count 5
 python3 japanese_review.py --quiz --tag 工作
 python3 japanese_review.py --quiz --tag 工作 --count 5
 ```
+
+无限随机复习：
+
+macOS：
+
+```bash
+python3 japanese_review.py --quiz --loop
+python3 japanese_review.py --quiz --wrong --loop
+python3 japanese_review.py --quiz --tag "工作" --loop
+```
+
+Windows 11：
+
+```powershell
+python japanese_review.py --quiz --loop
+python japanese_review.py --quiz --wrong --loop
+python japanese_review.py --quiz --tag "工作" --loop
+```
+
+`--loop` 会一直随机出题，直到输入 `q` 或 `quit` 退出。如果同时使用 `--loop` 和 `--count`，`--count` 会被忽略。
 
 Quiz 模式会优先从 `output/japanese_review.md` 中读取已经积累的句子。程序会随机显示中文意思，并让你输入对应的日语。
 
