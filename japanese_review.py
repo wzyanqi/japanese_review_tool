@@ -162,12 +162,9 @@ def get_entry_note(entry):
 
 
 def normalize_for_similarity(text):
-    return (
-        normalize_optional_text(text)
-        .replace(" ", "")
-        .replace("　", "")
-        .replace(".", "。")
-    )
+    normalized_text = normalize_optional_text(text)
+    ignored_characters = str.maketrans("", "", " 　。、.,!！?？")
+    return normalized_text.translate(ignored_characters)
 
 
 def calculate_similarity_score(answer, reference):
@@ -196,6 +193,137 @@ def get_similarity_feedback(score):
         return "⚠️ 部分正确，需要复习", YELLOW
 
     return "❌ 差异较大，建议加入错题", RED
+
+
+def build_review_data_key(entry):
+    return f"{entry['japanese']}|{entry['chinese']}"
+
+
+def normalize_similarity_score(value):
+    if value is None:
+        return None
+
+    try:
+        score = int(value)
+    except (TypeError, ValueError):
+        return None
+
+    if score < 0 or score > 100:
+        return None
+
+    return score
+
+
+def normalize_similarity_count(value):
+    try:
+        count = int(value)
+    except (TypeError, ValueError):
+        return 0
+
+    return max(0, count)
+
+
+def get_similarity_record(review_data, entry):
+    record = review_data.get(build_review_data_key(entry), {})
+
+    if not isinstance(record, dict):
+        record = {}
+
+    return {
+        "last_similarity_score": normalize_similarity_score(
+            record.get("last_similarity_score")
+        ),
+        "best_similarity_score": normalize_similarity_score(
+            record.get("best_similarity_score")
+        ),
+        "similarity_count": normalize_similarity_count(
+            record.get("similarity_count", 0)
+        ),
+    }
+
+
+def update_similarity_record(review_data, entry, score):
+    key = build_review_data_key(entry)
+    record = review_data.get(key, {})
+
+    if not isinstance(record, dict):
+        record = {}
+
+    previous_record = get_similarity_record(review_data, entry)
+    previous_best = previous_record["best_similarity_score"]
+    best_score = score if previous_best is None else max(previous_best, score)
+
+    record.update(
+        {
+            "japanese": entry["japanese"],
+            "chinese": entry["chinese"],
+            "tag": get_entry_tag(entry),
+            "grammar": get_entry_grammar(entry),
+            "words": get_entry_words(entry),
+            "note": get_entry_note(entry),
+            "last_similarity_score": score,
+            "best_similarity_score": best_score,
+            "similarity_count": previous_record["similarity_count"] + 1,
+        }
+    )
+    record["review_count"] = normalize_similarity_count(record.get("review_count", 0))
+    review_data[key] = record
+
+    return record
+
+
+def normalize_review_data_records(data):
+    for key, record in list(data.items()):
+        if not isinstance(record, dict):
+            data[key] = {}
+            record = data[key]
+
+        record["last_similarity_score"] = normalize_similarity_score(
+            record.get("last_similarity_score")
+        )
+        record["best_similarity_score"] = normalize_similarity_score(
+            record.get("best_similarity_score")
+        )
+        record["similarity_count"] = normalize_similarity_count(
+            record.get("similarity_count", 0)
+        )
+
+    return data
+
+
+def format_similarity_change(current_score, previous_score):
+    if previous_score is None:
+        return "首次记录", None
+
+    change = current_score - previous_score
+
+    if change > 0:
+        return f"+{change}%｜有进步", GREEN
+
+    if change < 0:
+        return f"{change}%｜有所下降", RED
+
+    return "0%｜保持不变", YELLOW
+
+
+def build_similarity_result(answer, entry, review_data):
+    score = calculate_similarity_score(answer, entry["japanese"])
+    feedback, feedback_color = get_similarity_feedback(score)
+    record = get_similarity_record(review_data, entry)
+    previous_score = record["last_similarity_score"]
+    previous_best = record["best_similarity_score"]
+    best_score = score if previous_best is None else max(previous_best, score)
+    change_text, change_color = format_similarity_change(score, previous_score)
+
+    return {
+        "score": score,
+        "feedback": feedback,
+        "feedback_color": feedback_color,
+        "previous_score": previous_score,
+        "best_score": best_score,
+        "change_text": change_text,
+        "change_color": change_color,
+    }
 
 
 def read_sentences(input_file):
@@ -569,7 +697,7 @@ def load_review_data(data_file):
         print_warning(f"{display_path(data_file)} 内容格式错误，将重新创建复习次数数据。")
         return {}
 
-    return data
+    return normalize_review_data_records(data)
 
 
 def save_review_data(data_file, data):
@@ -584,7 +712,7 @@ def update_review_counts(sentences, data):
     for sentence in sentences:
         japanese = sentence["japanese"]
         chinese = sentence["chinese"]
-        key = f"{japanese}|{chinese}"
+        key = build_review_data_key(sentence)
         current_record = data.get(key, {})
 
         if not isinstance(current_record, dict):
@@ -599,6 +727,15 @@ def update_review_counts(sentences, data):
             "words": get_entry_words(sentence),
             "note": get_entry_note(sentence),
             "review_count": review_count,
+            "last_similarity_score": normalize_similarity_score(
+                current_record.get("last_similarity_score")
+            ),
+            "best_similarity_score": normalize_similarity_score(
+                current_record.get("best_similarity_score")
+            ),
+            "similarity_count": normalize_similarity_count(
+                current_record.get("similarity_count", 0)
+            ),
         }
 
         data[key] = record
@@ -1720,19 +1857,39 @@ def print_quiz_prompt(index, count, sentence, wrong_mode=False, loop=False):
     return input(prompt).strip()
 
 
-def print_quiz_answer(answer, sentence):
-    similarity_score = calculate_similarity_score(answer, sentence["japanese"])
-    similarity_feedback, similarity_color = get_similarity_feedback(similarity_score)
+def print_similarity_panel(similarity_result):
+    score = similarity_result["score"]
+    feedback = similarity_result["feedback"]
+    feedback_color = similarity_result["feedback_color"]
+    previous_score = similarity_result["previous_score"]
+    best_score = similarity_result["best_score"]
+    change_text = similarity_result["change_text"]
+    change_color = similarity_result["change_color"]
 
+    print_card_title("正确度", icon="📊")
+    print(color_text(f"本次：{score}%｜{feedback}", feedback_color))
+
+    if previous_score is None:
+        print("上次：暂无")
+    else:
+        print(f"上次：{previous_score}%")
+
+    if change_color:
+        print(color_text(f"变化：{change_text}", change_color))
+    else:
+        print(f"变化：{change_text}")
+
+    print(f"历史最高：{best_score}%")
+
+
+def print_quiz_answer(answer, sentence, similarity_result):
     print_card_title("参考答案", icon="📖")
     print(color_text("你的输入：", GRAY))
     print(color_text(answer, GRAY))
     print("")
     print(color_text("✅ 参考答案：", GREEN))
     print(color_text(sentence["japanese"], GREEN))
-    print("")
-    print(color_text("📊 正确度：", similarity_color))
-    print(color_text(f"{similarity_score}%｜{similarity_feedback}", similarity_color))
+    print_similarity_panel(similarity_result)
     print("")
     print(color_text("🇨🇳 中文意思：", CYAN))
     print(color_text(sentence["chinese"], CYAN))
@@ -1775,6 +1932,7 @@ def run_regular_quiz(count, tag=None, loop=False):
     new_wrong_count = 0
     duplicate_wrong_count = 0
     index = 1
+    review_data = load_review_data(DATA_FILE)
 
     while loop or index <= count:
         sentence = random.choice(sentences)
@@ -1792,7 +1950,10 @@ def run_regular_quiz(count, tag=None, loop=False):
             )
             return
 
-        print_quiz_answer(answer, sentence)
+        similarity_result = build_similarity_result(answer, sentence, review_data)
+        print_quiz_answer(answer, sentence, similarity_result)
+        update_similarity_record(review_data, sentence, similarity_result["score"])
+        save_review_data(DATA_FILE, review_data)
 
         assessment = ask_self_assessment()
 
@@ -1843,6 +2004,7 @@ def run_wrong_quiz(count, tag=None, loop=False):
     mastered_count = 0
     graduated_count = 0
     index = 1
+    review_data = load_review_data(DATA_FILE)
 
     while loop or index <= count:
         if not entries:
@@ -1859,7 +2021,10 @@ def run_wrong_quiz(count, tag=None, loop=False):
             print_quiz_summary(asked_count - 1, mastered_count, 0, 0, graduated_count)
             return
 
-        print_quiz_answer(answer, entry)
+        similarity_result = build_similarity_result(answer, entry, review_data)
+        print_quiz_answer(answer, entry, similarity_result)
+        update_similarity_record(review_data, entry, similarity_result["score"])
+        save_review_data(DATA_FILE, review_data)
 
         assessment = ask_self_assessment()
 
