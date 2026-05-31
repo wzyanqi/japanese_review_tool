@@ -1833,6 +1833,7 @@ def print_quiz_summary(
     new_wrong_count,
     duplicate_wrong_count,
     graduated_count,
+    retry_count=0,
 ):
     print_section("✅ Quiz 结束")
     print_blank_line()
@@ -1843,6 +1844,7 @@ def print_quiz_summary(
             ("新增错题", f"{new_wrong_count} 题"),
             ("跳过重复错题", f"{duplicate_wrong_count} 题"),
             ("毕业错题", f"{graduated_count} 题"),
+            ("重答次数", f"{retry_count} 次"),
         ]
     )
 
@@ -1902,6 +1904,18 @@ def print_similarity_panel(similarity_result):
     print(f"历史最高：{best_score}%")
 
 
+def print_retry_similarity_panel(similarity_result):
+    score = similarity_result["score"]
+    feedback = similarity_result["feedback"]
+    feedback_color = similarity_result["feedback_color"]
+
+    print_card_title("重答正确度", icon="📊")
+    print(color_text(f"本次：{score}%｜{feedback}", feedback_color))
+    print("")
+    print(color_text("✅ 参考答案：", GREEN))
+    print(color_text(similarity_result["reference_answer"], GREEN))
+
+
 def print_quiz_answer(answer, sentence, similarity_result):
     print_card_title("参考答案", icon="📖")
     print(color_text("你的输入：", GRAY))
@@ -1935,7 +1949,24 @@ def print_quiz_answer(answer, sentence, similarity_result):
     print("")
 
 
-def run_regular_quiz(count, tag=None, loop=False):
+def run_retry_once(sentence, review_data):
+    print_card_title("再练一次")
+    print(color_text("请重新输入这句日语，输入 q 退出：", BOLD))
+    retry_answer = input("> ").strip()
+    print_debug_input(retry_answer)
+
+    if retry_answer.lower() in ("q", "quit"):
+        return True, False
+
+    similarity_result = build_similarity_result(retry_answer, sentence, review_data)
+    similarity_result["reference_answer"] = sentence["japanese"]
+    print_retry_similarity_panel(similarity_result)
+    update_similarity_record(review_data, sentence, similarity_result["score"])
+    save_review_data(DATA_FILE, review_data)
+    return False, True
+
+
+def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True):
     sentences = load_quiz_sentences(OUTPUT_FILE)
     sentences = filter_sentences_by_tag(sentences, tag)
 
@@ -1951,6 +1982,7 @@ def run_regular_quiz(count, tag=None, loop=False):
     mastered_count = 0
     new_wrong_count = 0
     duplicate_wrong_count = 0
+    retry_count = 0
     index = 1
     review_data = load_review_data(DATA_FILE)
 
@@ -1967,6 +1999,7 @@ def run_regular_quiz(count, tag=None, loop=False):
                 new_wrong_count,
                 duplicate_wrong_count,
                 0,
+                retry_count,
             )
             return
 
@@ -1984,6 +2017,7 @@ def run_regular_quiz(count, tag=None, loop=False):
                 new_wrong_count,
                 duplicate_wrong_count,
                 0,
+                retry_count,
             )
             return
 
@@ -1994,8 +2028,26 @@ def run_regular_quiz(count, tag=None, loop=False):
 
             if added:
                 new_wrong_count += 1
+                print_warning("已加入错题本。")
             else:
                 duplicate_wrong_count += 1
+
+            if retry_wrong:
+                should_quit, retried = run_retry_once(sentence, review_data)
+
+                if retried:
+                    retry_count += 1
+
+                if should_quit:
+                    print_quiz_summary(
+                        asked_count,
+                        mastered_count,
+                        new_wrong_count,
+                        duplicate_wrong_count,
+                        0,
+                        retry_count,
+                    )
+                    return
 
         index += 1
 
@@ -2005,10 +2057,11 @@ def run_regular_quiz(count, tag=None, loop=False):
         new_wrong_count,
         duplicate_wrong_count,
         0,
+        retry_count,
     )
 
 
-def run_wrong_quiz(count, tag=None, loop=False):
+def run_wrong_quiz(count, tag=None, loop=False, retry_wrong=True):
     entries = load_wrong_book_entries()
     entries = filter_sentences_by_tag(entries, tag)
 
@@ -2023,6 +2076,7 @@ def run_wrong_quiz(count, tag=None, loop=False):
     asked_count = 0
     mastered_count = 0
     graduated_count = 0
+    retry_count = 0
     index = 1
     review_data = load_review_data(DATA_FILE)
 
@@ -2038,7 +2092,14 @@ def run_wrong_quiz(count, tag=None, loop=False):
 
         if answer.lower() in ("q", "quit"):
             save_wrong_book_entries(entries)
-            print_quiz_summary(asked_count - 1, mastered_count, 0, 0, graduated_count)
+            print_quiz_summary(
+                asked_count - 1,
+                mastered_count,
+                0,
+                0,
+                graduated_count,
+                retry_count,
+            )
             return
 
         similarity_result = build_similarity_result(answer, entry, review_data)
@@ -2050,7 +2111,14 @@ def run_wrong_quiz(count, tag=None, loop=False):
 
         if assessment in ("q", "quit"):
             save_wrong_book_entries(entries)
-            print_quiz_summary(asked_count, mastered_count, 0, 0, graduated_count)
+            print_quiz_summary(
+                asked_count,
+                mastered_count,
+                0,
+                0,
+                graduated_count,
+                retry_count,
+            )
             return
 
         if assessment == "y":
@@ -2067,21 +2135,38 @@ def run_wrong_quiz(count, tag=None, loop=False):
                     print(f"🎉 恭喜，这条错题已掌握并移入 mastered.md：{entry['japanese']}")
                 else:
                     print_success(f"这条错题已从错题本移除：{entry['japanese']}")
+        elif retry_wrong:
+            should_quit, retried = run_retry_once(entry, review_data)
+
+            if retried:
+                retry_count += 1
+
+            if should_quit:
+                save_wrong_book_entries(entries)
+                print_quiz_summary(
+                    asked_count,
+                    mastered_count,
+                    0,
+                    0,
+                    graduated_count,
+                    retry_count,
+                )
+                return
 
         index += 1
 
     save_wrong_book_entries(entries)
-    print_quiz_summary(asked_count, mastered_count, 0, 0, graduated_count)
+    print_quiz_summary(asked_count, mastered_count, 0, 0, graduated_count, retry_count)
 
 
-def run_quiz(count, wrong_only=False, tag=None, loop=False):
+def run_quiz(count, wrong_only=False, tag=None, loop=False, retry_wrong=True):
     if loop and count != 1:
         print_warning("已启用 --loop，将忽略 --count。")
 
     if wrong_only:
-        run_wrong_quiz(count, tag, loop)
+        run_wrong_quiz(count, tag, loop, retry_wrong)
     else:
-        run_regular_quiz(count, tag, loop)
+        run_regular_quiz(count, tag, loop, retry_wrong)
 
 
 def is_quit_input(value):
@@ -2234,6 +2319,7 @@ def parse_args():
     parser.add_argument("--no-prompt", action="store_true", help="普通模式结束后不询问清空输入文件")
     parser.add_argument("--no-color", action="store_true", help="关闭 ANSI 彩色输出")
     parser.add_argument("--debug-input", action="store_true", help="显示 Quiz 输入调试信息")
+    parser.add_argument("--no-retry", action="store_true", help="答错后不进行重答")
     parser.add_argument("--quiz", action="store_true", help="进入随机抽查模式")
     parser.add_argument("--loop", action="store_true", help="进入无限随机复习模式")
     parser.add_argument("--wrong", action="store_true", help="只复习错题本")
@@ -2294,7 +2380,13 @@ def main():
     elif args.stats:
         run_stats()
     elif args.quiz:
-        run_quiz(args.count, args.wrong, args.tag, args.loop)
+        run_quiz(
+            args.count,
+            args.wrong,
+            args.tag,
+            args.loop,
+            retry_wrong=not args.no_retry,
+        )
     else:
         run_review(args.no_prompt)
 
