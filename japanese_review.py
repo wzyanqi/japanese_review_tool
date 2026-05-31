@@ -31,6 +31,7 @@ BACKUP_DIR = BASE_DIR / "backup"
 GRADUATION_THRESHOLD = 3
 SEPARATOR = "────────────────────────────"
 USE_COLOR = True
+DEBUG_INPUT = False
 RESET = "\033[0m"
 BOLD = "\033[1m"
 GREEN = "\033[32m"
@@ -52,6 +53,11 @@ def color_text(text, color):
 def set_color_enabled(enabled):
     global USE_COLOR
     USE_COLOR = enabled
+
+
+def set_debug_input_enabled(enabled):
+    global DEBUG_INPUT
+    DEBUG_INPUT = enabled
 
 
 def configure_console_encoding():
@@ -324,6 +330,18 @@ def build_similarity_result(answer, entry, review_data):
         "change_text": change_text,
         "change_color": change_color,
     }
+
+
+def print_debug_input(answer):
+    if not DEBUG_INPUT:
+        return
+
+    normalized_answer = normalize_for_similarity(answer)
+    print_card_title("输入调试", icon="🧪")
+    print(f"原始输入 repr：{answer!r}")
+    print(f"原始输入长度：{len(answer)}")
+    print(f"normalize 后 repr：{normalized_answer!r}")
+    print(f"normalize 后长度：{len(normalized_answer)}")
 
 
 def read_sentences(input_file):
@@ -1800,8 +1818,8 @@ def run_check():
 
 def ask_self_assessment():
     while True:
-        prompt = color_text("这题掌握了吗？y/n，输入 q 退出：", CYAN)
-        assessment = input(prompt).strip().lower()
+        print(color_text("这题掌握了吗？y/n，输入 q 退出：", CYAN))
+        assessment = input("> ").strip().lower()
 
         if assessment in ("y", "n", "q", "quit"):
             return assessment
@@ -1853,8 +1871,10 @@ def print_quiz_prompt(index, count, sentence, wrong_mode=False, loop=False):
     print(color_text("🇨🇳 中文：", CYAN))
     print(color_text(sentence["chinese"], CYAN))
     print("")
-    prompt = color_text("请输入日语，输入 q 退出：", BOLD)
-    return input(prompt).strip()
+    print(color_text("请输入日语，输入 q 退出：", BOLD))
+    answer = input("> ").strip()
+    print_debug_input(answer)
+    return answer
 
 
 def print_similarity_panel(similarity_result):
@@ -2213,6 +2233,7 @@ def parse_args():
     parser.add_argument("--clear-input", action="store_true", help="归档并清空输入文件")
     parser.add_argument("--no-prompt", action="store_true", help="普通模式结束后不询问清空输入文件")
     parser.add_argument("--no-color", action="store_true", help="关闭 ANSI 彩色输出")
+    parser.add_argument("--debug-input", action="store_true", help="显示 Quiz 输入调试信息")
     parser.add_argument("--quiz", action="store_true", help="进入随机抽查模式")
     parser.add_argument("--loop", action="store_true", help="进入无限随机复习模式")
     parser.add_argument("--wrong", action="store_true", help="只复习错题本")
@@ -2242,6 +2263,7 @@ def main():
     configure_console_encoding()
     args = parse_args()
     set_color_enabled(not args.no_color)
+    set_debug_input_enabled(args.debug_input)
 
     if args.yes and not args.reset:
         print_error("--yes 只能和 --reset 搭配使用。")
