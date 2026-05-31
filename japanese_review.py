@@ -1951,6 +1951,9 @@ def print_quiz_answer(answer, sentence, similarity_result):
 
 def run_retry_once(sentence, review_data):
     print_card_title("再练一次")
+    print(color_text("🇨🇳 中文：", CYAN))
+    print(color_text(sentence["chinese"], CYAN))
+    print("")
     print(color_text("请重新输入这句日语，输入 q 退出：", BOLD))
     retry_answer = input("> ").strip()
     print_debug_input(retry_answer)
