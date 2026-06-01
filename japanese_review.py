@@ -619,6 +619,7 @@ def load_mastered_entries():
                     "words": "",
                     "note": "",
                     "wrong_date": "",
+                    "mastered_source": "",
                     "mastered_date": current_section_date,
                     "status": "已掌握",
                 }
@@ -640,6 +641,8 @@ def load_mastered_entries():
                 current_entry["note"] = line.removeprefix("- 备注：").strip()
             elif line.startswith("- 首次加入错题本日期："):
                 current_entry["wrong_date"] = line.removeprefix("- 首次加入错题本日期：").strip()
+            elif line.startswith("- 掌握来源："):
+                current_entry["mastered_source"] = line.removeprefix("- 掌握来源：").strip()
             elif line.startswith("- 掌握日期："):
                 current_entry["mastered_date"] = line.removeprefix("- 掌握日期：").strip()
             elif line.startswith("- 状态："):
@@ -681,7 +684,7 @@ def append_mastered(entry, source="错题毕业"):
 
     if japanese in existing_japanese_sentences:
         print_warning(f"已在已掌握本中，跳过重复添加：{japanese}")
-        return False
+        return "exists"
 
     mastered_date = date.today().isoformat()
     is_new_file = not MASTERED_FILE.exists()
@@ -710,7 +713,8 @@ def append_mastered(entry, source="错题毕业"):
         file.write(f"- 掌握日期：{mastered_date}\n")
         file.write("- 状态：已掌握\n")
 
-    return True
+    print_success(f"已加入已掌握本：{japanese}")
+    return "added"
 
 
 def load_review_data(data_file):
@@ -820,7 +824,7 @@ def save_review_entries(entries):
         file.write("\n")
 
 
-def remove_from_review_book(japanese_sentence):
+def remove_from_review_book(japanese_sentence, quiet=False):
     if not OUTPUT_FILE.exists():
         return False
 
@@ -830,7 +834,8 @@ def remove_from_review_book(japanese_sentence):
     ]
 
     if len(kept_entries) == len(entries):
-        print_warning(f"review 池中未找到：{japanese_sentence}")
+        if not quiet:
+            print_warning(f"review 池中未找到：{japanese_sentence}")
         return False
 
     save_review_entries(kept_entries)
@@ -891,6 +896,22 @@ def remove_from_wrong_book(japanese_sentence):
 
     save_wrong_book_entries(kept_entries)
     return True
+
+
+def cleanup_after_mastered(japanese_sentence):
+    removed_from_review = remove_from_review_book(japanese_sentence, quiet=True)
+    removed_from_wrong = remove_from_wrong_book(japanese_sentence)
+
+    if removed_from_review:
+        print_success(f"已从 review 池移除：{japanese_sentence}")
+
+    if removed_from_wrong:
+        print_success(f"已从 wrong 池移除：{japanese_sentence}")
+
+    return {
+        "removed_from_review": removed_from_review,
+        "removed_from_wrong": removed_from_wrong,
+    }
 
 
 def filter_sentences_by_tag(sentences, tag):
@@ -1747,6 +1768,7 @@ def parse_markdown_entries_for_check(file_path, defaults):
                     "added_date": current_section_date,
                     "wrong_date": "",
                     "mastered_date": current_section_date,
+                    "mastered_source": "",
                     "mastery_count": "",
                     "has_tag": False,
                     "has_status": False,
@@ -1790,6 +1812,8 @@ def parse_markdown_entries_for_check(file_path, defaults):
                 pass
             elif line.startswith("- 首次加入错题本日期："):
                 current_entry["wrong_date"] = line.removeprefix("- 首次加入错题本日期：").strip()
+            elif line.startswith("- 掌握来源："):
+                current_entry["mastered_source"] = line.removeprefix("- 掌握来源：").strip()
             elif line.startswith("- 掌握日期："):
                 current_entry["has_mastered_date"] = True
                 current_entry["mastered_date"] = line.removeprefix("- 掌握日期：").strip()
@@ -2199,9 +2223,9 @@ def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True):
 
                 if mastery_answer == "y":
                     append_mastered(sentence, source="普通 Quiz")
-                    remove_from_wrong_book(sentence["japanese"])
+                    cleanup_result = cleanup_after_mastered(sentence["japanese"])
 
-                    if remove_from_review_book(sentence["japanese"]):
+                    if cleanup_result["removed_from_review"]:
                         print_success(f"已从 review 移入 master：{sentence['japanese']}")
                         sentences = [
                             item
@@ -2328,11 +2352,12 @@ def run_wrong_quiz(count, tag=None, loop=False, retry_wrong=True):
             print_success(f"掌握次数已更新为：{entry['mastery_count']}/{GRADUATION_THRESHOLD}")
 
             if entry["mastery_count"] >= GRADUATION_THRESHOLD:
-                added_to_mastered = append_mastered(entry, source="错题毕业")
+                mastered_status = append_mastered(entry, source="错题毕业")
+                cleanup_after_mastered(entry["japanese"])
                 entries.remove(entry)
                 graduated_count += 1
 
-                if added_to_mastered:
+                if mastered_status == "added":
                     print(f"🎉 恭喜，这条错题已掌握并移入 mastered.md：{entry['japanese']}")
                 else:
                     print_success(f"这条错题已从错题本移除：{entry['japanese']}")

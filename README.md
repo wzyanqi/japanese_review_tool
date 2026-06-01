@@ -346,6 +346,10 @@ output/daily/YYYY-MM-DD.md
 
 因此 `japanese_review.md` 会随着学习推进而减少，`wrong_book.md` 会随着错题毕业而减少，`mastered.md` 会逐渐增加。
 
+从 V13.1 开始，`mastered.md` 具有最高状态优先级。当一句话进入 `mastered.md` 后，程序会自动检查 `japanese_review.md` 和 `wrong_book.md`。如果 review 或 wrong 中仍有同一句日语，程序会自动删除对应记录，避免同一句同时处于“待复习”“错题”和“已掌握”多个状态。
+
+清理时只按日语句子完全一致匹配，不做模糊匹配，不忽略标点或空格。
+
 ## Quiz 随机抽查
 
 普通随机抽查：
