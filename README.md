@@ -350,6 +350,20 @@ output/daily/YYYY-MM-DD.md
 
 清理时只按日语句子完全一致匹配，不做模糊匹配，不忽略标点或空格。
 
+从 V13.2 开始，工具会在写入 review、wrong、master 时自动维护三池状态一致性。三池优先级为：
+
+```text
+master > wrong > review
+```
+
+因此：
+
+- 如果一句话已经在 master 中，则不会再写入 wrong 或 review
+- 如果一句话已经在 wrong 中，则不会再写入 review
+- 如果一句话写入 master，系统会清理 review 和 wrong 中的同句
+- 如果一句话写入 wrong，系统会清理 review 中的同句
+- 如果目标池已经存在该句，系统不会重复写入，但仍会清理来源池中的残留
+
 ## Quiz 随机抽查
 
 普通随机抽查：

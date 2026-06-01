@@ -898,6 +898,29 @@ def remove_from_wrong_book(japanese_sentence):
     return True
 
 
+def exists_in_review(japanese_sentence):
+    return japanese_sentence in load_existing_japanese_sentences(OUTPUT_FILE)
+
+
+def exists_in_wrong(japanese_sentence):
+    return any(
+        entry.get("japanese") == japanese_sentence
+        for entry in load_wrong_book_entries()
+    )
+
+
+def exists_in_master(japanese_sentence):
+    return japanese_sentence in load_existing_japanese_sentences(MASTERED_FILE)
+
+
+def get_sentence_pool_state(japanese_sentence):
+    return {
+        "review": exists_in_review(japanese_sentence),
+        "wrong": exists_in_wrong(japanese_sentence),
+        "master": exists_in_master(japanese_sentence),
+    }
+
+
 def cleanup_after_mastered(japanese_sentence):
     removed_from_review = remove_from_review_book(japanese_sentence, quiet=True)
     removed_from_wrong = remove_from_wrong_book(japanese_sentence)
@@ -912,6 +935,78 @@ def cleanup_after_mastered(japanese_sentence):
         "removed_from_review": removed_from_review,
         "removed_from_wrong": removed_from_wrong,
     }
+
+
+def sync_sentence_state(entry, target_pool, source_pool=None):
+    japanese = entry["japanese"]
+    state = get_sentence_pool_state(japanese)
+    result = {
+        "target_pool": target_pool,
+        "added": False,
+        "already_exists": False,
+        "removed_from_review": False,
+        "removed_from_wrong": False,
+        "skipped_reason": "",
+    }
+
+    if target_pool == "review":
+        if state["master"]:
+            result["skipped_reason"] = "master"
+            print_warning(f"该句已在 master 池中，跳过导入：{japanese}")
+            return result
+
+        if state["wrong"]:
+            result["skipped_reason"] = "wrong"
+            print_warning(f"该句已在 wrong 池中，跳过导入：{japanese}")
+            return result
+
+        if state["review"]:
+            result["already_exists"] = True
+            result["skipped_reason"] = "review"
+            print_warning(f"该句已在 review 池中，跳过重复：{japanese}")
+            return result
+
+        result["added"] = True
+        return result
+
+    if target_pool == "wrong":
+        if state["master"]:
+            result["skipped_reason"] = "master"
+            print_warning(f"该句已在 master 池中，跳过写入 wrong：{japanese}")
+            result["removed_from_review"] = remove_from_review_book(japanese, quiet=True)
+
+            if result["removed_from_review"]:
+                print_success(f"已从 review 池移除：{japanese}")
+
+            return result
+
+        if state["wrong"]:
+            result["already_exists"] = True
+            result["skipped_reason"] = "wrong"
+            print_warning(f"该句已在 wrong 池中，跳过重复写入：{japanese}")
+        else:
+            result["added"] = append_wrong_book(entry)
+
+            if result["added"]:
+                print_success(f"已加入 wrong 池：{japanese}")
+
+        result["removed_from_review"] = remove_from_review_book(japanese, quiet=True)
+
+        if result["removed_from_review"]:
+            print_success(f"已从 review 池移除：{japanese}")
+
+        return result
+
+    if target_pool == "master":
+        mastered_status = append_mastered(entry, source="普通 Quiz" if source_pool == "review" else "错题毕业")
+        result["added"] = mastered_status == "added"
+        result["already_exists"] = mastered_status == "exists"
+        cleanup_result = cleanup_after_mastered(japanese)
+        result["removed_from_review"] = cleanup_result["removed_from_review"]
+        result["removed_from_wrong"] = cleanup_result["removed_from_wrong"]
+        return result
+
+    raise ValueError(f"未知目标池：{target_pool}")
 
 
 def filter_sentences_by_tag(sentences, tag):
@@ -1033,12 +1128,6 @@ def run_add(add_values, tag="", grammar="", words="", note=""):
         print_error("中文意思不能为空。")
         return
 
-    existing_japanese_sentences = load_existing_japanese_sentences(OUTPUT_FILE)
-
-    if japanese in existing_japanese_sentences:
-        print_warning(f"已存在，跳过添加：{japanese}")
-        return
-
     sentence = {
         "japanese": japanese,
         "chinese": chinese,
@@ -1047,6 +1136,11 @@ def run_add(add_values, tag="", grammar="", words="", note=""):
         "words": normalize_optional_text(words),
         "note": normalize_optional_text(note),
     }
+    sync_result = sync_sentence_state(sentence, target_pool="review")
+
+    if not sync_result["added"]:
+        return
+
     review_data = load_review_data(DATA_FILE)
     reviewed_sentences = update_review_counts([sentence], review_data)
     save_review_data(DATA_FILE, review_data)
@@ -1064,20 +1158,33 @@ def run_add(add_values, tag="", grammar="", words="", note=""):
 def run_review(no_prompt=False):
     print_header("📘 日语复习工具", "普通追加模式")
     sentences, total_lines, error_count, format_errors = read_sentences(INPUT_FILE)
-    existing_japanese_sentences = load_existing_japanese_sentences(OUTPUT_FILE)
     new_sentences = []
-    duplicate_count = 0
-    duplicate_sentences = []
+    skipped_sentences = []
+    pending_review_sentences = set()
 
     for sentence in sentences:
-        japanese = sentence["japanese"]
-
-        if japanese in existing_japanese_sentences:
-            duplicate_sentences.append(japanese)
-            duplicate_count += 1
+        if sentence["japanese"] in pending_review_sentences:
+            print_warning(f"该句已在本次导入中出现，跳过重复：{sentence['japanese']}")
+            skipped_sentences.append(
+                {
+                    "japanese": sentence["japanese"],
+                    "reason": "本次重复",
+                }
+            )
             continue
 
-        existing_japanese_sentences.add(japanese)
+        sync_result = sync_sentence_state(sentence, target_pool="review")
+
+        if not sync_result["added"]:
+            skipped_sentences.append(
+                {
+                    "japanese": sentence["japanese"],
+                    "reason": sync_result["skipped_reason"] or "重复",
+                }
+            )
+            continue
+
+        pending_review_sentences.add(sentence["japanese"])
         new_sentences.append(sentence)
 
     review_data = load_review_data(DATA_FILE)
@@ -1098,12 +1205,12 @@ def run_review(no_prompt=False):
     else:
         print_warning("没有新增句子，未追加复习文件。")
 
-    if duplicate_sentences:
+    if skipped_sentences:
         print_card_title("跳过重复句子")
-        for sentence in duplicate_sentences[:5]:
-            print(f"- {sentence}")
-        if len(duplicate_sentences) > 5:
-            print(f"- 还有 {len(duplicate_sentences) - 5} 条未显示。")
+        for item in skipped_sentences[:5]:
+            print(f"- {item['japanese']}（{item['reason']}）")
+        if len(skipped_sentences) > 5:
+            print(f"- 还有 {len(skipped_sentences) - 5} 条未显示。")
 
     if format_errors:
         print_card_title("格式错误")
@@ -1118,7 +1225,7 @@ def run_review(no_prompt=False):
         [
             ("本次读取", f"{total_lines} 行"),
             ("成功新增", f"{len(reviewed_sentences)} 句"),
-            ("跳过重复", f"{duplicate_count} 句"),
+            ("跳过重复", f"{len(skipped_sentences)} 句"),
             ("格式错误", f"{error_count} 行"),
         ]
     )
@@ -2222,10 +2329,13 @@ def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True):
                     return
 
                 if mastery_answer == "y":
-                    append_mastered(sentence, source="普通 Quiz")
-                    cleanup_result = cleanup_after_mastered(sentence["japanese"])
+                    sync_result = sync_sentence_state(
+                        sentence,
+                        target_pool="master",
+                        source_pool="review",
+                    )
 
-                    if cleanup_result["removed_from_review"]:
+                    if sync_result["removed_from_review"]:
                         print_success(f"已从 review 移入 master：{sentence['japanese']}")
                         sentences = [
                             item
@@ -2233,20 +2343,18 @@ def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True):
                             if item.get("japanese") != sentence["japanese"]
                         ]
         else:
-            added = append_wrong_book(sentence)
+            sync_result = sync_sentence_state(
+                sentence,
+                target_pool="wrong",
+                source_pool="review",
+            )
 
-            if added:
+            if sync_result["added"]:
                 new_wrong_count += 1
-                print_warning("已加入错题本。")
             else:
                 duplicate_wrong_count += 1
 
-            if remove_from_review_book(sentence["japanese"]):
-                if added:
-                    print_success(f"已从 review 移入 wrong：{sentence['japanese']}")
-                else:
-                    print_warning(f"已在错题本中，已从 review 池移除：{sentence['japanese']}")
-
+            if sync_result["removed_from_review"]:
                 sentences = [
                     item
                     for item in sentences
@@ -2352,12 +2460,19 @@ def run_wrong_quiz(count, tag=None, loop=False, retry_wrong=True):
             print_success(f"掌握次数已更新为：{entry['mastery_count']}/{GRADUATION_THRESHOLD}")
 
             if entry["mastery_count"] >= GRADUATION_THRESHOLD:
-                mastered_status = append_mastered(entry, source="错题毕业")
-                cleanup_after_mastered(entry["japanese"])
-                entries.remove(entry)
+                sync_result = sync_sentence_state(
+                    entry,
+                    target_pool="master",
+                    source_pool="wrong",
+                )
+                entries = [
+                    item
+                    for item in entries
+                    if item.get("japanese") != entry["japanese"]
+                ]
                 graduated_count += 1
 
-                if mastered_status == "added":
+                if sync_result["added"]:
                     print(f"🎉 恭喜，这条错题已掌握并移入 mastered.md：{entry['japanese']}")
                 else:
                     print_success(f"这条错题已从错题本移除：{entry['japanese']}")
