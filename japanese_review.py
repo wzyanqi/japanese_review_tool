@@ -490,6 +490,7 @@ def load_review_entries(output_file):
                     "words": "",
                     "note": "",
                     "status": "待复习",
+                    "review_count": 1,
                     "date": current_section_date,
                 }
                 continue
@@ -511,6 +512,13 @@ def load_review_entries(output_file):
             elif line.startswith("- 状态："):
                 status = line.removeprefix("- 状态：").strip()
                 current_entry["status"] = status or "待复习"
+            elif line.startswith("- 复习次数："):
+                value = line.removeprefix("- 复习次数：").strip()
+
+                try:
+                    current_entry["review_count"] = int(value)
+                except ValueError:
+                    current_entry["review_count"] = 1
 
     if current_entry:
         entries.append(current_entry)
@@ -666,7 +674,7 @@ def save_wrong_book_entries(entries):
             file.write("- 状态：待复习\n")
 
 
-def append_mastered(entry):
+def append_mastered(entry, source="错题毕业"):
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     existing_japanese_sentences = load_existing_japanese_sentences(MASTERED_FILE)
     japanese = entry["japanese"]
@@ -693,7 +701,12 @@ def append_mastered(entry):
         for line in optional_lines:
             file.write(f"{line}\n")
 
-        file.write(f"- 首次加入错题本日期：{entry['added_date']}\n")
+        wrong_date = entry.get("added_date") or entry.get("wrong_date", "")
+
+        if wrong_date:
+            file.write(f"- 首次加入错题本日期：{wrong_date}\n")
+
+        file.write(f"- 掌握来源：{source}\n")
         file.write(f"- 掌握日期：{mastered_date}\n")
         file.write("- 状态：已掌握\n")
 
@@ -789,6 +802,41 @@ def build_review_section(sentences, review_date):
     return "\n".join(lines)
 
 
+def save_review_entries(entries):
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    with OUTPUT_FILE.open("w", encoding=TEXT_ENCODING) as file:
+        file.write("# 日语复习本\n")
+
+        grouped_entries = {}
+        for entry in entries:
+            entry_date = entry.get("date") or date.today().isoformat()
+            grouped_entries.setdefault(entry_date, []).append(entry)
+
+        for entry_date, dated_entries in grouped_entries.items():
+            file.write("\n\n")
+            file.write(build_review_section(dated_entries, entry_date))
+
+        file.write("\n")
+
+
+def remove_from_review_book(japanese_sentence):
+    if not OUTPUT_FILE.exists():
+        return False
+
+    entries = load_review_entries(OUTPUT_FILE)
+    kept_entries = [
+        entry for entry in entries if entry.get("japanese") != japanese_sentence
+    ]
+
+    if len(kept_entries) == len(entries):
+        print_warning(f"review 池中未找到：{japanese_sentence}")
+        return False
+
+    save_review_entries(kept_entries)
+    return True
+
+
 def append_review_file(output_file, sentences, review_date):
     if not sentences:
         return
@@ -829,6 +877,19 @@ def append_wrong_book(sentence):
     )
     save_wrong_book_entries(entries)
 
+    return True
+
+
+def remove_from_wrong_book(japanese_sentence):
+    entries = load_wrong_book_entries()
+    kept_entries = [
+        entry for entry in entries if entry.get("japanese") != japanese_sentence
+    ]
+
+    if len(kept_entries) == len(entries):
+        return False
+
+    save_wrong_book_entries(kept_entries)
     return True
 
 
@@ -1084,9 +1145,9 @@ def run_stats():
     print_header("📊 日语学习统计")
     print_summary(
         [
-            ("总句子数", total_count),
+            ("当前待复习句子数", total_count),
             ("当前错题数", wrong_count),
-            ("已掌握错题数", mastered_count),
+            ("已掌握句子数", mastered_count),
             ("今日新增句子", today_new_count),
             ("已填写语法点", grammar_count),
             ("已填写重点单词", words_count),
@@ -1113,6 +1174,88 @@ def run_stats():
 
     print_card_title("建议")
     print(build_stats_advice(wrong_count))
+
+
+def get_today_backup_files(today):
+    if not BACKUP_DIR.exists():
+        return []
+
+    return sorted(BACKUP_DIR.glob(f"{today}_*_backup.zip"))
+
+
+def build_today_reminder(today_new_count, wrong_count, total_count):
+    if total_count == 0:
+        return "当前还没有句子，请先用 --add 或 input/sentences.txt 添加句子。"
+
+    if today_new_count == 0:
+        return "今天还没有新增句子，可以先添加 1-3 条。"
+
+    if wrong_count > 0:
+        return "当前还有错题，建议做一次错题 Quiz。"
+
+    return "今天已经有新增句子，可以做 5 题普通 Quiz 巩固。"
+
+
+def print_today_new_sentences(sentences):
+    print_card_title("今日新增句子")
+
+    if not sentences:
+        print("今天还没有新增句子。")
+        return
+
+    for index, sentence in enumerate(sentences[:10], start=1):
+        tag = get_entry_tag(sentence)
+        suffix = f"｜{tag}" if tag else ""
+        print(f"{index}. {sentence['japanese']}{suffix}")
+
+    remaining_count = len(sentences) - 10
+
+    if remaining_count > 0:
+        print(f"还有 {remaining_count} 条未显示。")
+
+
+def run_today():
+    today = date.today().isoformat()
+    daily_output_file = DAILY_OUTPUT_DIR / f"{today}.md"
+    today_sentences = load_quiz_sentences(daily_output_file)
+    review_entries = load_quiz_sentences(OUTPUT_FILE)
+    wrong_entries = load_wrong_book_entries()
+    mastered_entries = load_quiz_sentences(MASTERED_FILE)
+    today_backup_files = get_today_backup_files(today)
+    latest_backup = today_backup_files[-1] if today_backup_files else "无"
+
+    print_header("📅 今日学习面板")
+    print_field("日期", today)
+    print_blank_line()
+    print_summary(
+        [
+            ("今日新增句子", f"{len(today_sentences)} 句"),
+            ("当前待复习句子数", f"{len(review_entries)} 句"),
+            ("当前错题数", f"{len(wrong_entries)} 题"),
+            ("已掌握句子数", f"{len(mastered_entries)} 句"),
+            ("今日备份次数", f"{len(today_backup_files)} 次"),
+            ("最近备份", latest_backup),
+        ]
+    )
+
+    print_today_new_sentences(today_sentences)
+
+    print_card_title("今日备份", icon="📦")
+    print_summary(
+        [
+            ("今日备份次数", f"{len(today_backup_files)} 次"),
+            ("最近备份", latest_backup),
+        ]
+    )
+
+    print_card_title("提醒", icon="📎")
+    print_warning(
+        build_today_reminder(
+            len(today_sentences),
+            len(wrong_entries),
+            len(review_entries),
+        )
+    )
 
 
 def run_tags():
@@ -1746,7 +1889,7 @@ def run_check():
         review_duplicates = find_duplicates([entry["japanese"] for entry in review_entries])
         review_issues.extend(f"重复日语句子：{sentence}" for sentence in review_duplicates)
 
-    print_check_section("1. 总复习本检查", "总句子数", len(review_entries), review_issues)
+    print_check_section("1. review 池检查", "当前待复习句子数", len(review_entries), review_issues)
     all_issues.extend(review_issues)
 
     review_sentence_set = {entry["japanese"] for entry in review_entries if entry["japanese"]}
@@ -1765,10 +1908,7 @@ def run_check():
             elif not entry["mastery_count"].isdigit():
                 wrong_issues.append(f"「{japanese}」掌握次数不是有效数字：{entry['mastery_count']}")
 
-            if entry["japanese"] and entry["japanese"] not in review_sentence_set:
-                wrong_issues.append(f"错题「{entry['japanese']}」不在总复习本中。")
-
-    print_check_section("2. 错题本检查", "当前错题数", len(wrong_entries), wrong_issues)
+    print_check_section("2. wrong 池检查", "当前错题数", len(wrong_entries), wrong_issues)
     all_issues.extend(wrong_issues)
 
     wrong_sentence_set = {entry["japanese"] for entry in wrong_entries if entry["japanese"]}
@@ -1786,16 +1926,21 @@ def run_check():
             if not entry["has_mastered_date"] or not entry["mastered_date"]:
                 mastered_issues.append(f"「{japanese}」缺少掌握日期。")
 
-            if entry["japanese"] and entry["japanese"] not in review_sentence_set:
-                mastered_issues.append(f"已掌握句子「{entry['japanese']}」不在总复习本中。")
-
     conflict_issues = [
-        f"发现状态冲突：{sentence} 同时存在于错题本和已掌握本。"
-        for sentence in sorted(wrong_sentence_set & mastered_sentence_set)
+        f"发现状态冲突：{sentence} 同时存在于 review 和 wrong。"
+        for sentence in sorted(review_sentence_set & wrong_sentence_set)
     ]
+    conflict_issues.extend(
+        f"发现状态冲突：{sentence} 同时存在于 review 和 master。"
+        for sentence in sorted(review_sentence_set & mastered_sentence_set)
+    )
+    conflict_issues.extend(
+        f"发现状态冲突：{sentence} 同时存在于 wrong 和 master。"
+        for sentence in sorted(wrong_sentence_set & mastered_sentence_set)
+    )
     mastered_issues.extend(conflict_issues)
 
-    print_check_section("3. 已掌握本检查", "已掌握句子数", len(mastered_entries), mastered_issues)
+    print_check_section("3. master 池检查", "已掌握句子数", len(mastered_entries), mastered_issues)
     all_issues.extend(mastered_issues)
 
     tag_issues = collect_tag_issues(review_entries + wrong_entries + mastered_entries)
@@ -1823,6 +1968,17 @@ def ask_self_assessment():
 
         if assessment in ("y", "n", "q", "quit"):
             return assessment
+
+        print_warning("请输入 y、n、q 或 quit。")
+
+
+def ask_mark_mastered():
+    while True:
+        print(color_text("这题正确度很高，是否标记为完全掌握并加入 mastered.md？y/n，输入 q 退出：", CYAN))
+        answer = input("> ").strip().lower()
+
+        if answer in ("y", "n", "q", "quit"):
+            return answer
 
         print_warning("请输入 y、n、q 或 quit。")
 
@@ -2026,6 +2182,32 @@ def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True):
 
         if assessment == "y":
             mastered_count += 1
+
+            if similarity_result["score"] >= 95:
+                mastery_answer = ask_mark_mastered()
+
+                if mastery_answer in ("q", "quit"):
+                    print_quiz_summary(
+                        asked_count,
+                        mastered_count,
+                        new_wrong_count,
+                        duplicate_wrong_count,
+                        0,
+                        retry_count,
+                    )
+                    return
+
+                if mastery_answer == "y":
+                    append_mastered(sentence, source="普通 Quiz")
+                    remove_from_wrong_book(sentence["japanese"])
+
+                    if remove_from_review_book(sentence["japanese"]):
+                        print_success(f"已从 review 移入 master：{sentence['japanese']}")
+                        sentences = [
+                            item
+                            for item in sentences
+                            if item.get("japanese") != sentence["japanese"]
+                        ]
         else:
             added = append_wrong_book(sentence)
 
@@ -2034,6 +2216,18 @@ def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True):
                 print_warning("已加入错题本。")
             else:
                 duplicate_wrong_count += 1
+
+            if remove_from_review_book(sentence["japanese"]):
+                if added:
+                    print_success(f"已从 review 移入 wrong：{sentence['japanese']}")
+                else:
+                    print_warning(f"已在错题本中，已从 review 池移除：{sentence['japanese']}")
+
+                sentences = [
+                    item
+                    for item in sentences
+                    if item.get("japanese") != sentence["japanese"]
+                ]
 
             if retry_wrong:
                 should_quit, retried = run_retry_once(sentence, review_data)
@@ -2053,6 +2247,10 @@ def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True):
                     return
 
         index += 1
+
+        if not sentences:
+            print_warning("review 池已经没有可复习句子。")
+            break
 
     print_quiz_summary(
         asked_count,
@@ -2130,7 +2328,7 @@ def run_wrong_quiz(count, tag=None, loop=False, retry_wrong=True):
             print_success(f"掌握次数已更新为：{entry['mastery_count']}/{GRADUATION_THRESHOLD}")
 
             if entry["mastery_count"] >= GRADUATION_THRESHOLD:
-                added_to_mastered = append_mastered(entry)
+                added_to_mastered = append_mastered(entry, source="错题毕业")
                 entries.remove(entry)
                 graduated_count += 1
 
@@ -2328,6 +2526,7 @@ def parse_args():
     parser.add_argument("--wrong", action="store_true", help="只复习错题本")
     parser.add_argument("--mastered", action="store_true", help="导出已掌握本")
     parser.add_argument("--stats", action="store_true", help="显示学习统计面板")
+    parser.add_argument("--today", action="store_true", help="显示今日学习面板")
     parser.add_argument("--tags", action="store_true", help="显示标签统计")
     parser.add_argument("--tag", help="按指定标签抽查")
     parser.add_argument("--grammar", default="", help="快速添加时填写语法点")
@@ -2380,6 +2579,8 @@ def main():
         run_export_anki()
     elif args.tags:
         run_tags()
+    elif args.today:
+        run_today()
     elif args.stats:
         run_stats()
     elif args.quiz:

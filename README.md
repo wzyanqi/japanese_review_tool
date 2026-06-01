@@ -1,8 +1,8 @@
 # japanese_review_tool
 
-这是一个本地日语复习小工具。它会读取 `input/sentences.txt` 里的日语句子和中文意思，然后追加写入 `output/japanese_review.md`，方便每天复习。
+这是一个本地日语复习小工具。它会读取 `input/sentences.txt` 里的日语句子和中文意思，然后追加写入 `output/japanese_review.md`，作为当前待复习池，方便每天复习。
 
-工具还会把每个新加入句子的复习次数保存到 `data.json`，并提供随机抽查 Quiz 模式帮助主动回忆。Quiz 后可以自评，把未掌握的句子沉淀到错题本；错题连续掌握后会自动进入已掌握本。统计模式可以查看当前学习积累。处理完成后可以归档并清空输入区，方便长期使用。标签功能可以按场景分类和抽查。V12.3 支持手动导入语法点、重点单词和备注。还支持 CSV、Anki 导出和数据健康检查。
+工具还会把每个新加入句子的复习次数保存到 `data.json`，并提供随机抽查 Quiz 模式帮助主动回忆。V13.0 起采用三池流转机制：待复习句子、错题和已掌握句子会在不同文件中流转。统计模式可以查看当前学习积累。处理完成后可以归档并清空输入区，方便长期使用。标签功能可以按场景分类和抽查。V12.3 支持手动导入语法点、重点单词和备注。还支持 CSV、Anki 导出和数据健康检查。
 
 V12.3 版本保持简单：不联网，不调用 AI，不做自动纠错，只使用 Python 标准库。V10.1 优化了终端输出格式，V10.2 在保留美观输出的基础上加固了 macOS 和 Windows 11 的路径、编码、CSV 导出兼容性。V12.3 增加了备注字段，适合记录句子的学习重点、易错点和使用场景。
 
@@ -171,6 +171,12 @@ python3 japanese_review.py --quiz --wrong --loop
 python3 japanese_review.py --stats
 ```
 
+查看今日学习面板：
+
+```bash
+python3 japanese_review.py --today
+```
+
 一键备份学习数据：
 
 ```bash
@@ -207,7 +213,7 @@ python3 japanese_review.py --quiz --tag 工作 --count 5
 python3 japanese_review.py --quiz --wrong --tag 工作 --count 5
 ```
 
-导出总复习本 CSV：
+导出当前待复习池 CSV：
 
 ```bash
 python3 japanese_review.py --export-csv
@@ -317,6 +323,28 @@ output/daily/YYYY-MM-DD.md
 它不会写入 `input/sentences.txt`，也不会触发清空输入文件提示。`--tag`、`--grammar`、`--words`、`--note` 都是可选字段，未填写时保存为空字符串。
 
 如果 `output/japanese_review.md` 中已经存在完全相同的日语句子，程序会跳过添加，不会覆盖旧数据。
+
+## 三池流转机制
+
+从 V13.0 开始，工具采用三池流转机制：
+
+- `output/japanese_review.md`：当前待复习池，也叫 review 池
+- `output/wrong_book.md`：错题强化池，也叫 wrong 池
+- `output/mastered.md`：已掌握池，也叫 master 池
+
+普通 Quiz 中：
+
+- 自评 `n`：句子从 review 移入 wrong，并触发“答错后重答一次”
+- 正确度很高且确认完全掌握：句子从 review 移入 master
+- 自评 `y` 但不确认完全掌握：句子继续留在 review
+
+错题 Quiz 中：
+
+- 自评 `y` 会增加掌握次数
+- 掌握次数达到 3 次后，句子从 wrong 移入 master
+- 自评 `n` 则留在 wrong，并触发“答错后重答一次”
+
+因此 `japanese_review.md` 会随着学习推进而减少，`wrong_book.md` 会随着错题毕业而减少，`mastered.md` 会逐渐增加。
 
 ## Quiz 随机抽查
 
@@ -434,9 +462,9 @@ python3 japanese_review.py --stats
 
 统计模式会显示：
 
-- 总句子数
+- 当前待复习句子数
 - 当前错题数
-- 已掌握错题数
+- 已掌握句子数
 - 今日新增句子数
 - 已填写语法点的句子数
 - 已填写重点单词的句子数
@@ -456,6 +484,38 @@ output/daily/YYYY-MM-DD.md
 ```
 
 统计面板还会显示标签总数，以及句子最多的前 5 个标签。
+
+## 今日学习面板
+
+`--today` 偏当天复盘，回答“我今天到底学了什么”；`--stats` 偏长期总览。
+
+macOS：
+
+```bash
+python3 japanese_review.py --today
+```
+
+Windows 11：
+
+```powershell
+python japanese_review.py --today
+```
+
+今日学习面板会显示：
+
+- 今日新增句子
+- 今日新增句子列表
+- 当前待复习句子数
+- 当前错题数
+- 已掌握句子数
+- 今日备份次数
+- 最近备份文件
+
+今日新增句子来自：
+
+```text
+output/daily/YYYY-MM-DD.md
+```
 
 ## 标签
 
@@ -578,7 +638,7 @@ python3 japanese_review.py --reset --yes
 output/export/
 ```
 
-导出总复习本：
+导出当前待复习池：
 
 ```bash
 python3 japanese_review.py --export-csv
@@ -672,8 +732,9 @@ output/mastered.md
 - 英文标签大小写不一致
 - 语法点、重点单词和备注字段格式是否能正常识别
 - 错题本里缺少掌握次数或掌握次数不是数字
-- 错题本和已掌握本中的句子是否不在总复习本中
-- 同一句是否同时存在于错题本和已掌握本
+- 同一句是否同时存在于 review 和 wrong
+- 同一句是否同时存在于 review 和 master
+- 同一句是否同时存在于 wrong 和 master
 
 `--check` 只检查并提示，不会自动修改文件，不会删除重复句子，不会修改标签，也不会移动错题或已掌握句子。
 
