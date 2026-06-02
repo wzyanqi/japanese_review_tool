@@ -1308,13 +1308,17 @@ def count_filled_field(entries, field_name):
     return sum(1 for entry in entries if normalize_optional_text(entry.get(field_name, "")))
 
 
-def run_stats():
+def get_today_new_count():
     today = date.today().isoformat()
     daily_output_file = DAILY_OUTPUT_DIR / f"{today}.md"
+    return len(load_quiz_sentences(daily_output_file))
+
+
+def run_stats():
     pool_entries = load_all_pool_entries()
     pool_counts = get_pool_counts(pool_entries)
     all_entries = pool_entries["review"] + pool_entries["wrong"] + pool_entries["master"]
-    today_new_count = len(load_quiz_sentences(daily_output_file))
+    today_new_count = get_today_new_count()
     grammar_count = count_filled_field(all_entries, "grammar")
     words_count = count_filled_field(all_entries, "words")
     note_count = count_filled_field(all_entries, "note")
@@ -1378,6 +1382,156 @@ def run_stats():
     print_card_title("建议", icon="📎")
     for advice in build_stats_advices(pool_counts):
         print(advice)
+
+
+def limited_lines(lines, limit=3):
+    return lines[:limit]
+
+
+def build_plan_advice(pool_counts, today_new_count):
+    review_count = pool_counts["review_count"]
+    wrong_count = pool_counts["wrong_count"]
+    master_count = pool_counts["master_count"]
+    total_managed_count = pool_counts["total_managed_count"]
+    advice_lines = []
+    command_lines = []
+
+    if total_managed_count == 0:
+        advice_lines = [
+            "当前还没有句子，先添加 3 条 N5-N4 句子。",
+            "添加后做一次普通 Quiz。",
+        ]
+        command_lines = [
+            'python3 japanese_review.py --add "日语句子" "中文意思"',
+            "python3 japanese_review.py --quiz --count 3",
+        ]
+        return {
+            "advice_lines": advice_lines,
+            "command_lines": command_lines,
+        }
+
+    if today_new_count > 5:
+        advice_lines.append("今天已经新增较多，不建议继续大量新增，优先复习消化。")
+
+        if wrong_count > 0:
+            advice_lines.append("先做错题 Quiz 5 题。")
+            command_lines.append("python3 japanese_review.py --quiz --wrong --count 5")
+
+        if review_count > 0:
+            advice_lines.append("再做普通 Quiz 5 题。")
+            command_lines.append("python3 japanese_review.py --quiz --count 5")
+
+        if not command_lines:
+            command_lines.append("python3 japanese_review.py --today")
+
+        return {
+            "advice_lines": limited_lines(advice_lines),
+            "command_lines": limited_lines(command_lines),
+        }
+
+    if wrong_count >= 10:
+        wrong_quiz_count = 10 if wrong_count >= 20 else 5
+        advice_lines = [
+            f"当前错题较多，先做错题 Quiz {wrong_quiz_count} 题。",
+            "今天不要继续大量新增句子。",
+            "错题复习后再看是否做普通 Quiz。",
+        ]
+        command_lines = [
+            f"python3 japanese_review.py --quiz --wrong --count {wrong_quiz_count}",
+        ]
+        return {
+            "advice_lines": advice_lines,
+            "command_lines": command_lines,
+        }
+
+    if wrong_count > 0:
+        wrong_quiz_count = 3 if wrong_count < 5 else 5
+        advice_lines = [
+            f"先做错题 Quiz {wrong_quiz_count} 题。",
+            "如果还有精力，再做普通 Quiz 5 题。",
+        ]
+        command_lines = [
+            f"python3 japanese_review.py --quiz --wrong --count {wrong_quiz_count}",
+        ]
+
+        if review_count > 0:
+            command_lines.append("python3 japanese_review.py --quiz --count 5")
+
+        return {
+            "advice_lines": advice_lines,
+            "command_lines": limited_lines(command_lines),
+        }
+
+    if review_count >= 30:
+        advice_lines = [
+            "review 待复习池较多，先做普通 Quiz 10 题。",
+            "通过 Quiz 把句子流转到 wrong 或 master。",
+            "暂时不要继续大量新增句子。",
+        ]
+        command_lines = ["python3 japanese_review.py --quiz --count 10"]
+        return {
+            "advice_lines": advice_lines,
+            "command_lines": command_lines,
+        }
+
+    if review_count >= 5:
+        advice_lines = [
+            "做普通 Quiz 5 题。",
+            "如果答错较多，再做错题 Quiz。",
+        ]
+        command_lines = ["python3 japanese_review.py --quiz --count 5"]
+        return {
+            "advice_lines": advice_lines,
+            "command_lines": command_lines,
+        }
+
+    if review_count < 5 and wrong_count < 3:
+        advice_lines = [
+            "当前待复习压力较小，可以新增 1-3 句。",
+            "新增后做普通 Quiz 巩固。",
+        ]
+        command_lines = [
+            'python3 japanese_review.py --add "日语句子" "中文意思"',
+            "python3 japanese_review.py --quiz --count 3",
+        ]
+        return {
+            "advice_lines": advice_lines,
+            "command_lines": command_lines,
+        }
+
+    advice_lines = ["先查看今日学习面板，再选择普通 Quiz 或错题 Quiz。"]
+    command_lines = ["python3 japanese_review.py --today"]
+    return {
+        "advice_lines": advice_lines,
+        "command_lines": command_lines,
+    }
+
+
+def run_plan():
+    pool_counts = get_pool_counts()
+    today_new_count = get_today_new_count()
+    plan = build_plan_advice(pool_counts, today_new_count)
+
+    print_header("📌 今日复习建议")
+
+    print_card_title("当前状态", icon="📚")
+    print_summary(
+        [
+            ("review 待复习池", f"{pool_counts['review_count']} 句"),
+            ("wrong 错题池", f"{pool_counts['wrong_count']} 句"),
+            ("master 已掌握池", f"{pool_counts['master_count']} 句"),
+            ("全部已管理句子", f"{pool_counts['total_managed_count']} 句"),
+            ("今日新增句子", f"{today_new_count} 句"),
+        ]
+    )
+
+    print_card_title("建议", icon="📎")
+    for index, advice in enumerate(plan["advice_lines"], start=1):
+        print(f"{index}. {advice}")
+
+    print_card_title("推荐命令", icon="⌨️")
+    for command in plan["command_lines"]:
+        print(command)
 
 
 def build_today_reminder(today_new_count, pool_counts):
@@ -2623,6 +2777,7 @@ def print_menu():
     print("7. 重置 / 清空当前状态")
     print("8. 今日学习面板 (--today)")
     print("9. 三池统计面板 (--stats)")
+    print("10. 查看复习建议 (--plan)")
     print("0. 退出")
     print_blank_line()
     print("0 / q：退出")
@@ -2889,12 +3044,15 @@ def run_menu_action(choice):
     elif choice == "9":
         run_stats()
         return True
+    elif choice == "10":
+        run_plan()
+        return True
 
     return False
 
 
 def run_menu():
-    valid_choices = {str(number) for number in range(1, 10)}
+    valid_choices = {str(number) for number in range(1, 11)}
 
     while True:
         print_menu()
@@ -2932,6 +3090,7 @@ def parse_args():
     parser.add_argument("--mastered", action="store_true", help="导出已掌握本")
     parser.add_argument("--stats", action="store_true", help="显示学习统计面板")
     parser.add_argument("--today", action="store_true", help="显示今日学习面板")
+    parser.add_argument("--plan", action="store_true", help="显示今日复习建议")
     parser.add_argument("--tags", action="store_true", help="显示标签统计")
     parser.add_argument("--tag", help="按指定标签抽查")
     parser.add_argument("--grammar", default="", help="快速添加时填写语法点")
@@ -2986,6 +3145,8 @@ def main():
         run_tags()
     elif args.today:
         run_today()
+    elif args.plan:
+        run_plan()
     elif args.stats:
         run_stats()
     elif args.quiz:
