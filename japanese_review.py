@@ -2498,6 +2498,25 @@ def run_retry_once(sentence, review_data):
     return False, True
 
 
+def choose_next_question(candidates, last_japanese=None):
+    if not candidates:
+        return None
+
+    if len(candidates) == 1:
+        return random.choice(candidates)
+
+    available_candidates = [
+        item
+        for item in candidates
+        if item.get("japanese") != last_japanese
+    ]
+
+    if not available_candidates:
+        available_candidates = candidates
+
+    return random.choice(available_candidates)
+
+
 def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True):
     sentences = load_quiz_sentences(OUTPUT_FILE)
     sentences = filter_sentences_by_tag(sentences, tag)
@@ -2517,9 +2536,16 @@ def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True):
     retry_count = 0
     index = 1
     review_data = load_review_data(DATA_FILE)
+    last_japanese = None
 
     while loop or index <= count:
-        sentence = random.choice(sentences)
+        sentence = choose_next_question(sentences, last_japanese)
+
+        if sentence is None:
+            print_warning("review 池已经没有可复习句子。")
+            break
+
+        last_japanese = sentence["japanese"]
         asked_count += 1
 
         answer = print_quiz_prompt(index, count, sentence, loop=loop)
@@ -2654,13 +2680,20 @@ def run_wrong_quiz(count, tag=None, loop=False, retry_wrong=True):
     retry_count = 0
     index = 1
     review_data = load_review_data(DATA_FILE)
+    last_japanese = None
 
     while loop or index <= count:
         if not entries:
             print_success("错题本已经清空。")
             break
 
-        entry = random.choice(entries)
+        entry = choose_next_question(entries, last_japanese)
+
+        if entry is None:
+            print_success("错题本已经清空。")
+            break
+
+        last_japanese = entry["japanese"]
         asked_count += 1
 
         answer = print_quiz_prompt(index, count, entry, wrong_mode=True, loop=loop)
