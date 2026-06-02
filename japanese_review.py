@@ -1241,14 +1241,67 @@ def format_percentage(numerator, denominator):
     return f"{numerator / denominator * 100:.1f}%"
 
 
-def build_stats_advice(wrong_count):
-    if wrong_count > 20:
-        return "当前错题较多，建议今天优先复习错题。"
+def display_percentage(value):
+    return value if value is not None else "暂无"
+
+
+def load_all_pool_entries():
+    return {
+        "review": load_quiz_sentences(OUTPUT_FILE),
+        "wrong": load_wrong_book_entries(),
+        "master": load_mastered_entries(),
+    }
+
+
+def get_pool_counts(pool_entries=None):
+    if pool_entries is None:
+        pool_entries = load_all_pool_entries()
+
+    review_count = len(pool_entries["review"])
+    wrong_count = len(pool_entries["wrong"])
+    master_count = len(pool_entries["master"])
+
+    return {
+        "review_count": review_count,
+        "wrong_count": wrong_count,
+        "master_count": master_count,
+        "total_managed_count": review_count + wrong_count + master_count,
+    }
+
+
+def build_stats_advices(pool_counts):
+    review_count = pool_counts["review_count"]
+    wrong_count = pool_counts["wrong_count"]
+    master_count = pool_counts["master_count"]
+    total_managed_count = pool_counts["total_managed_count"]
+
+    if total_managed_count == 0:
+        return ["当前还没有句子，请先用 --add 或 input/sentences.txt 添加句子。"]
+
+    if wrong_count >= 10:
+        return [
+            "当前 wrong 错题池较多，建议优先做错题 Quiz。",
+            "推荐命令：python3 japanese_review.py --quiz --wrong --count 5",
+        ]
+
+    if review_count > 0:
+        advices = [
+            f"review 待复习池还有 {review_count} 句，可以继续普通 Quiz。",
+            "推荐命令：python3 japanese_review.py --quiz --count 5",
+        ]
+
+        if wrong_count > 0:
+            advices.append(f"wrong 错题池还有 {wrong_count} 句，也建议安排错题 Quiz。")
+
+        return advices
 
     if wrong_count > 0:
-        return "当前错题数量可控，建议做 5 题错题 quiz。"
+        return ["review 池已清空，当前重点是消化 wrong 错题池。"]
 
-    return "暂无错题，可以继续添加新句子或做普通 quiz。"
+    if master_count > 0:
+        return ["当前 review 和 wrong 都已清空，说明当前句子基本都已掌握。可以新增 1-3 句。"]
+
+    return ["当前还没有句子，请先用 --add 或 input/sentences.txt 添加句子。"]
 
 
 def count_filled_field(entries, field_name):
@@ -1258,50 +1311,100 @@ def count_filled_field(entries, field_name):
 def run_stats():
     today = date.today().isoformat()
     daily_output_file = DAILY_OUTPUT_DIR / f"{today}.md"
-    review_entries = load_quiz_sentences(OUTPUT_FILE)
-    total_count = len(review_entries)
-    wrong_count = len(load_wrong_book_entries())
-    mastered_count = len(load_quiz_sentences(MASTERED_FILE))
+    pool_entries = load_all_pool_entries()
+    pool_counts = get_pool_counts(pool_entries)
+    all_entries = pool_entries["review"] + pool_entries["wrong"] + pool_entries["master"]
     today_new_count = len(load_quiz_sentences(daily_output_file))
-    grammar_count = count_filled_field(review_entries, "grammar")
-    words_count = count_filled_field(review_entries, "words")
-    note_count = count_filled_field(review_entries, "note")
-    tag_counts = build_tag_counts(review_entries)
-    wrong_rate = format_percentage(wrong_count, total_count)
-    graduation_rate = format_percentage(mastered_count, wrong_count + mastered_count)
+    grammar_count = count_filled_field(all_entries, "grammar")
+    words_count = count_filled_field(all_entries, "words")
+    note_count = count_filled_field(all_entries, "note")
+    tag_counts = build_tag_counts(all_entries)
+    wrong_rate = format_percentage(
+        pool_counts["wrong_count"],
+        pool_counts["total_managed_count"],
+    )
+    master_rate = format_percentage(
+        pool_counts["master_count"],
+        pool_counts["total_managed_count"],
+    )
+    graduation_rate = format_percentage(
+        pool_counts["master_count"],
+        pool_counts["wrong_count"] + pool_counts["master_count"],
+    )
 
     print_header("📊 日语学习统计")
+
+    print_card_title("三池状态", icon="📚")
     print_summary(
         [
-            ("当前待复习句子数", total_count),
-            ("当前错题数", wrong_count),
-            ("已掌握句子数", mastered_count),
-            ("今日新增句子", today_new_count),
-            ("已填写语法点", grammar_count),
-            ("已填写重点单词", words_count),
-            ("已填写备注", note_count),
+            ("review 待复习池", f"{pool_counts['review_count']} 句"),
+            ("wrong 错题池", f"{pool_counts['wrong_count']} 句"),
+            ("master 已掌握池", f"{pool_counts['master_count']} 句"),
+            ("全部已管理句子", f"{pool_counts['total_managed_count']} 句"),
+            ("今日新增句子", f"{today_new_count} 句"),
         ]
     )
 
-    if total_count == 0:
-        print_warning("还没有积累句子，请先添加句子并运行普通模式。")
+    if pool_counts["total_managed_count"] == 0:
+        print_warning("还没有句子，请先用 --add 或 input/sentences.txt 添加句子。")
 
-    print_blank_line()
-    if wrong_rate is not None:
-        print(f"当前错题率：{wrong_rate}")
+    print_card_title("字段完整度", icon="🧩")
+    print_summary(
+        [
+            ("已填写语法点", f"{grammar_count} 句"),
+            ("已填写重点单词", f"{words_count} 句"),
+            ("已填写备注", f"{note_count} 句"),
+        ]
+    )
 
-    if graduation_rate is not None:
-        print(f"错题毕业率：{graduation_rate}")
+    print_card_title("学习质量", icon="📈")
+    print_summary(
+        [
+            ("当前错题占比", display_percentage(wrong_rate)),
+            ("已掌握占比", display_percentage(master_rate)),
+            ("错题毕业率", display_percentage(graduation_rate)),
+        ]
+    )
 
+    print_card_title("标签概览", icon="🏷️")
     if tag_counts:
-        print_card_title("标签概览")
         print_summary([("标签总数", len(tag_counts))])
         top_tags = sorted(tag_counts.items(), key=lambda item: item[1], reverse=True)[:5]
         top_tags_text = "，".join(f"{tag}：{count}" for tag, count in top_tags)
         print(f"句子最多的前 5 个标签：{top_tags_text}")
+    else:
+        print("暂无标签。")
 
-    print_card_title("建议")
-    print(build_stats_advice(wrong_count))
+    print_card_title("建议", icon="📎")
+    for advice in build_stats_advices(pool_counts):
+        print(advice)
+
+
+def build_today_reminder(today_new_count, pool_counts):
+    review_count = pool_counts["review_count"]
+    wrong_count = pool_counts["wrong_count"]
+    master_count = pool_counts["master_count"]
+    total_managed_count = pool_counts["total_managed_count"]
+
+    if total_managed_count == 0:
+        return "当前还没有句子，请先用 --add 或 input/sentences.txt 添加句子。"
+
+    if wrong_count >= 10:
+        return "当前 wrong 错题池较多，建议优先做错题 Quiz。"
+
+    if wrong_count > 0:
+        return "当前 wrong 错题池还有句子，建议做一次错题 Quiz。"
+
+    if review_count > 0:
+        if today_new_count == 0:
+            return "今天还没有新增句子，可以先添加 1-3 条，或做 5 题普通 Quiz。"
+
+        return "今天已经有新增句子，可以做 5 题普通 Quiz 巩固。"
+
+    if master_count > 0:
+        return "当前 review 和 wrong 都已清空，可以新增 1-3 句继续积累。"
+
+    return "当前还没有句子，请先用 --add 或 input/sentences.txt 添加句子。"
 
 
 def get_today_backup_files(today):
@@ -1309,19 +1412,6 @@ def get_today_backup_files(today):
         return []
 
     return sorted(BACKUP_DIR.glob(f"{today}_*_backup.zip"))
-
-
-def build_today_reminder(today_new_count, wrong_count, total_count):
-    if total_count == 0:
-        return "当前还没有句子，请先用 --add 或 input/sentences.txt 添加句子。"
-
-    if today_new_count == 0:
-        return "今天还没有新增句子，可以先添加 1-3 条。"
-
-    if wrong_count > 0:
-        return "当前还有错题，建议做一次错题 Quiz。"
-
-    return "今天已经有新增句子，可以做 5 题普通 Quiz 巩固。"
 
 
 def print_today_new_sentences(sentences):
@@ -1346,23 +1436,22 @@ def run_today():
     today = date.today().isoformat()
     daily_output_file = DAILY_OUTPUT_DIR / f"{today}.md"
     today_sentences = load_quiz_sentences(daily_output_file)
-    review_entries = load_quiz_sentences(OUTPUT_FILE)
-    wrong_entries = load_wrong_book_entries()
-    mastered_entries = load_quiz_sentences(MASTERED_FILE)
+    pool_counts = get_pool_counts()
     today_backup_files = get_today_backup_files(today)
     latest_backup = today_backup_files[-1] if today_backup_files else "无"
 
     print_header("📅 今日学习面板")
     print_field("日期", today)
     print_blank_line()
+    print_summary([("今日新增句子", f"{len(today_sentences)} 句")])
+
+    print_card_title("三池状态", icon="📚")
     print_summary(
         [
-            ("今日新增句子", f"{len(today_sentences)} 句"),
-            ("当前待复习句子数", f"{len(review_entries)} 句"),
-            ("当前错题数", f"{len(wrong_entries)} 题"),
-            ("已掌握句子数", f"{len(mastered_entries)} 句"),
-            ("今日备份次数", f"{len(today_backup_files)} 次"),
-            ("最近备份", latest_backup),
+            ("review 待复习池", f"{pool_counts['review_count']} 句"),
+            ("wrong 错题池", f"{pool_counts['wrong_count']} 句"),
+            ("master 已掌握池", f"{pool_counts['master_count']} 句"),
+            ("全部已管理句子", f"{pool_counts['total_managed_count']} 句"),
         ]
     )
 
@@ -1380,8 +1469,7 @@ def run_today():
     print_warning(
         build_today_reminder(
             len(today_sentences),
-            len(wrong_entries),
-            len(review_entries),
+            pool_counts,
         )
     )
 
