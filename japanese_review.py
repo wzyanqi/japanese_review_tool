@@ -2614,19 +2614,47 @@ def print_menu():
     print_blank_line()
     print("请选择功能：")
     print_blank_line()
-    print("1. 快速添加句子")
-    print("2. 随机复习 5 题")
-    print("3. 无限随机复习")
-    print("4. 错题复习 5 题")
-    print("5. 无限错题复习")
-    print("6. 查看学习统计")
-    print("7. 查看标签统计")
-    print("8. 数据健康检查")
-    print("9. 一键备份")
-    print("10. 导出 CSV")
-    print("11. 导出 Anki")
+    print("1. 普通 Quiz")
+    print("2. 错题 Quiz")
+    print("3. 完全掌握确认")
+    print("4. 快速添加句子")
+    print("5. 导入句子 (input/sentences.txt)")
+    print("6. 备份数据")
+    print("7. 重置 / 清空当前状态")
+    print("8. 今日学习面板 (--today)")
+    print("9. 三池统计面板 (--stats)")
     print("0. 退出")
     print_blank_line()
+    print("0 / q：退出")
+    print("数字键：选择功能")
+    print_blank_line()
+
+
+def print_quiz_menu(title):
+    print_header("📘 日语复习工具", title)
+    print_blank_line()
+
+
+def read_positive_int_from_menu(prompt, default_value=1):
+    value = read_menu_input(prompt)
+
+    if not value:
+        return default_value, False
+
+    if is_quit_input(value) or value == "0":
+        return None, True
+
+    try:
+        number = int(value)
+    except ValueError:
+        print_warning("请输入有效数字。")
+        return None, True
+
+    if number < 1:
+        print_warning("数量需要大于 0。")
+        return None, True
+
+    return number, False
 
 
 def wait_for_menu_return():
@@ -2647,6 +2675,115 @@ def read_menu_add_field(prompt, required=False, error_message=""):
     return value, False
 
 
+def confirm_menu_action(prompt):
+    while True:
+        answer = read_menu_input(prompt).lower()
+
+        if answer == "y":
+            return True
+
+        if answer in {"n", "0"} or is_quit_input(answer):
+            return False
+
+        print_warning("请输入 y 或 n。")
+
+
+def run_menu_regular_quiz():
+    while True:
+        print_quiz_menu("普通 Quiz")
+        print("普通 Quiz：")
+        print("1. 随机抽题")
+        print("2. 指定数量")
+        print("3. 指定标签")
+        print("0. 返回主菜单")
+        print_blank_line()
+        print("回车：随机抽题 1 题")
+        choice = read_menu_input("请输入数字：")
+
+        if not choice or choice == "1":
+            run_quiz(1)
+            return True
+
+        if choice == "0" or is_quit_input(choice):
+            return False
+
+        if choice == "2":
+            count, canceled = read_positive_int_from_menu("请输入抽题数量：")
+
+            if not canceled and count:
+                run_quiz(count)
+                return True
+
+            return False
+
+        if choice == "3":
+            tag = read_menu_input("请输入标签：")
+
+            if tag == "0" or is_quit_input(tag):
+                return False
+
+            if not tag:
+                print_warning("标签不能为空。")
+                return False
+
+            count, canceled = read_positive_int_from_menu("请输入抽题数量，回车默认 5：", 5)
+
+            if not canceled and count:
+                run_quiz(count, tag=tag)
+                return True
+
+            return False
+
+        print_warning("请输入有效选项。")
+
+
+def run_menu_wrong_quiz():
+    while True:
+        print_quiz_menu("错题 Quiz")
+        print("错题 Quiz：")
+        print("1. 随机抽题")
+        print("2. 指定数量")
+        print("3. loop 模式")
+        print("0. 返回主菜单")
+        print_blank_line()
+        print("回车：错题随机抽题 1 题")
+        choice = read_menu_input("请输入数字：")
+
+        if not choice or choice == "1":
+            run_quiz(1, wrong_only=True)
+            return True
+
+        if choice == "0" or is_quit_input(choice):
+            return False
+
+        if choice == "2":
+            count, canceled = read_positive_int_from_menu("请输入抽题数量：")
+
+            if not canceled and count:
+                run_quiz(count, wrong_only=True)
+                return True
+
+            return False
+
+        if choice == "3":
+            run_quiz(1, wrong_only=True, loop=True)
+            return True
+
+        print_warning("请输入有效选项。")
+
+
+def run_menu_mastery_quiz():
+    print_header("📘 日语复习工具", "完全掌握确认")
+    print_warning("该入口会进入普通 Quiz。正确度很高且自评掌握时，可确认移入 master。")
+    count, canceled = read_positive_int_from_menu("请输入抽题数量，回车默认 1：", 1)
+
+    if not canceled and count:
+        run_quiz(count)
+        return True
+
+    return False
+
+
 def run_menu_add():
     japanese, canceled = read_menu_add_field(
         "请输入日语句子：",
@@ -2656,7 +2793,7 @@ def run_menu_add():
 
     if canceled:
         print_warning("已取消本次添加。")
-        return
+        return False
 
     chinese, canceled = read_menu_add_field(
         "请输入中文意思：",
@@ -2666,58 +2803,98 @@ def run_menu_add():
 
     if canceled:
         print_warning("已取消本次添加。")
-        return
+        return False
 
-    tag, canceled = read_menu_add_field("请输入标签，可留空：")
+    tag, canceled = read_menu_add_field("标签（可选）：")
     if canceled:
         print_warning("已取消本次添加。")
-        return
+        return False
 
-    grammar, canceled = read_menu_add_field("请输入语法点，可留空：")
+    grammar, canceled = read_menu_add_field("语法点（可选）：")
     if canceled:
         print_warning("已取消本次添加。")
-        return
+        return False
 
-    words, canceled = read_menu_add_field("请输入重点单词，可留空：")
+    words, canceled = read_menu_add_field("重点单词（可选）：")
     if canceled:
         print_warning("已取消本次添加。")
-        return
+        return False
 
-    note, canceled = read_menu_add_field("请输入备注，可留空：")
+    note, canceled = read_menu_add_field("备注（可选）：")
     if canceled:
         print_warning("已取消本次添加。")
-        return
+        return False
+
+    if not confirm_menu_action("是否加入 review 池？y/n："):
+        print_warning("已取消本次添加。")
+        return False
 
     run_add([japanese, chinese], tag, grammar, words, note)
+    return True
+
+
+def run_menu_import():
+    print_header("📘 日语复习工具", "导入句子")
+
+    if not confirm_menu_action("是否从 input/sentences.txt 导入句子？y/n："):
+        print_warning("已取消导入。")
+        return False
+
+    run_review(no_prompt=True)
+    return True
+
+
+def run_menu_backup():
+    print_header("📘 日语复习工具", "备份数据")
+
+    if not confirm_menu_action("是否立即执行备份？y/n："):
+        print_warning("已取消备份。")
+        return False
+
+    run_backup()
+    return True
+
+
+def run_menu_reset():
+    print_header("📘 日语复习工具", "重置 / 清空当前状态")
+    print_warning("确认要清空当前 review / wrong / master 状态吗？")
+    print_warning("为了安全，下一步仍需输入 RESET 才会真正执行。")
+
+    if not confirm_menu_action("是否继续？y/n："):
+        print_warning("已取消重置。")
+        return False
+
+    run_reset(skip_confirm=False)
+    return True
 
 
 def run_menu_action(choice):
     if choice == "1":
-        run_menu_add()
+        return run_menu_regular_quiz()
     elif choice == "2":
-        run_quiz(5)
+        return run_menu_wrong_quiz()
     elif choice == "3":
-        run_quiz(1, loop=True)
+        return run_menu_mastery_quiz()
     elif choice == "4":
-        run_quiz(5, wrong_only=True)
+        return run_menu_add()
     elif choice == "5":
-        run_quiz(1, wrong_only=True, loop=True)
+        return run_menu_import()
     elif choice == "6":
-        run_stats()
+        return run_menu_backup()
     elif choice == "7":
-        run_tags()
+        return run_menu_reset()
     elif choice == "8":
-        run_check()
+        run_today()
+        return True
     elif choice == "9":
-        run_backup()
-    elif choice == "10":
-        run_export_csv()
-    elif choice == "11":
-        run_export_anki()
+        run_stats()
+        return True
+
+    return False
 
 
 def run_menu():
-    valid_choices = {str(number) for number in range(1, 12)}
+    valid_choices = {str(number) for number in range(1, 10)}
 
     while True:
         print_menu()
@@ -2732,10 +2909,10 @@ def run_menu():
             print_blank_line()
             continue
 
-        run_menu_action(choice)
+        should_wait = run_menu_action(choice)
         print_blank_line()
 
-        if wait_for_menu_return():
+        if should_wait and wait_for_menu_return():
             print(color_text("👋 已退出菜单模式。", GREEN))
             return
 
