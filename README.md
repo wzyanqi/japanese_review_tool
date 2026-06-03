@@ -500,6 +500,34 @@ python3 japanese_review.py --quiz --count 1 --debug-input
 
 调试模式会显示 Python 实际收到的原始输入、长度，以及用于正确度计算的 normalize 后文本。
 
+## 日语朗读功能
+
+如果你在 macOS 上使用，可以在 Quiz 中开启日语朗读：
+
+```bash
+python3 japanese_review.py --quiz --speak
+```
+
+错题 Quiz：
+
+```bash
+python3 japanese_review.py --quiz --wrong --speak
+```
+
+开启后，程序会在显示参考答案后朗读日语句子。默认使用 macOS 系统语音 `Kyoko`：
+
+```bash
+python3 japanese_review.py --quiz --speak --voice Kyoko
+```
+
+也可以指定其他系统语音：
+
+```bash
+python3 japanese_review.py --quiz --speak --voice Otoya
+```
+
+如果当前系统不支持 `say` 命令，程序会友好跳过朗读，不影响 Quiz。菜单模式中进入普通 Quiz 或错题 Quiz 时，也可以选择是否开启朗读。
+
 ## 学习统计
 
 运行：
