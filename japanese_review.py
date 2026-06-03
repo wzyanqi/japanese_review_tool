@@ -5,6 +5,7 @@ import random
 import shutil
 import subprocess
 import sys
+import unicodedata
 from difflib import SequenceMatcher
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -3080,8 +3081,12 @@ def run_quiz(count, wrong_only=False, tag=None, loop=False, retry_wrong=True, sp
         run_regular_quiz(count, tag, loop, retry_wrong, speak_enabled, voice)
 
 
+def normalize_menu_choice(value):
+    return unicodedata.normalize("NFKC", value.strip()).lower()
+
+
 def is_quit_input(value):
-    return value.strip().lower() in {"q", "quit"}
+    return normalize_menu_choice(value) in {"q", "quit"}
 
 
 def read_menu_input(prompt):
@@ -3089,6 +3094,10 @@ def read_menu_input(prompt):
         return input(prompt).strip()
     except EOFError:
         return "q"
+
+
+def read_menu_choice(prompt):
+    return normalize_menu_choice(read_menu_input(prompt))
 
 
 def print_menu():
@@ -3120,7 +3129,7 @@ def print_quiz_menu(title):
 
 
 def read_positive_int_from_menu(prompt, default_value=1):
-    value = read_menu_input(prompt)
+    value = read_menu_choice(prompt)
 
     if not value:
         return default_value, False
@@ -3142,7 +3151,7 @@ def read_positive_int_from_menu(prompt, default_value=1):
 
 
 def read_trend_days_from_menu():
-    value = read_menu_input("显示最近几天？回车默认 7：")
+    value = read_menu_choice("显示最近几天？回车默认 7：")
 
     if not value:
         return 7, False
@@ -3168,7 +3177,7 @@ def read_trend_days_from_menu():
 
 
 def wait_for_menu_return():
-    answer = read_menu_input("按回车返回菜单，输入 q 退出：")
+    answer = read_menu_choice("按回车返回菜单，输入 q 退出：")
     return is_quit_input(answer)
 
 
@@ -3187,7 +3196,7 @@ def read_menu_add_field(prompt, required=False, error_message=""):
 
 def confirm_menu_action(prompt):
     while True:
-        answer = read_menu_input(prompt).lower()
+        answer = read_menu_choice(prompt)
 
         if answer == "y":
             return True
@@ -3212,7 +3221,7 @@ def run_menu_regular_quiz():
         print("0. 返回主菜单")
         print_blank_line()
         print("回车：随机抽题 1 题")
-        choice = read_menu_input("请输入数字：")
+        choice = read_menu_choice("请输入数字：")
 
         if not choice or choice == "1":
             speak_enabled = ask_menu_speak_enabled()
@@ -3264,7 +3273,7 @@ def run_menu_wrong_quiz():
         print("0. 返回主菜单")
         print_blank_line()
         print("回车：错题随机抽题 1 题")
-        choice = read_menu_input("请输入数字：")
+        choice = read_menu_choice("请输入数字：")
 
         if not choice or choice == "1":
             speak_enabled = ask_menu_speak_enabled()
@@ -3430,7 +3439,7 @@ def run_menu():
 
     while True:
         print_menu()
-        choice = read_menu_input("请输入数字：")
+        choice = read_menu_choice("请输入数字：")
 
         if choice == "0" or is_quit_input(choice):
             print(color_text("👋 已退出菜单模式。", GREEN))
