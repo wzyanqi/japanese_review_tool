@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import sys
 from difflib import SequenceMatcher
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -20,6 +20,7 @@ INPUT_ARCHIVE_DIR = BASE_DIR / "input" / "archive"
 DATA_FILE = BASE_DIR / "data.json"
 OUTPUT_DIR = BASE_DIR / "output"
 OUTPUT_FILE = OUTPUT_DIR / "japanese_review.md"
+ACTIVITY_LOG_FILE = OUTPUT_DIR / "activity_log.json"
 DAILY_OUTPUT_DIR = OUTPUT_DIR / "daily"
 WRONG_BOOK_FILE = OUTPUT_DIR / "wrong_book.md"
 MASTERED_FILE = OUTPUT_DIR / "mastered.md"
@@ -1315,6 +1316,223 @@ def get_today_new_count():
     return len(load_quiz_sentences(daily_output_file))
 
 
+def default_activity_record():
+    return {
+        "quiz_count": 0,
+        "similarity_scores": [],
+        "wrong_added": 0,
+        "master_added": 0,
+        "retry_count": 0,
+        "review_to_wrong": 0,
+        "review_to_master": 0,
+        "wrong_to_master": 0,
+    }
+
+
+def normalize_activity_record(record):
+    normalized = default_activity_record()
+
+    if not isinstance(record, dict):
+        return normalized
+
+    for key in normalized:
+        if key == "similarity_scores":
+            scores = record.get(key, [])
+
+            if isinstance(scores, list):
+                normalized[key] = [
+                    int(score)
+                    for score in scores
+                    if isinstance(score, (int, float))
+                ]
+        else:
+            value = record.get(key, 0)
+            normalized[key] = value if isinstance(value, int) and value >= 0 else 0
+
+    return normalized
+
+
+def load_activity_log():
+    if not ACTIVITY_LOG_FILE.exists():
+        return {}
+
+    try:
+        with ACTIVITY_LOG_FILE.open("r", encoding=TEXT_ENCODING) as file:
+            data = json.load(file)
+    except json.JSONDecodeError:
+        print_warning("activity_log.json 损坏，已跳过趋势日志读取。")
+        return {}
+    except OSError as error:
+        print_warning(f"读取 activity_log.json 失败，已跳过。{error}")
+        return {}
+
+    if not isinstance(data, dict):
+        print_warning("activity_log.json 格式异常，已跳过趋势日志读取。")
+        return {}
+
+    return {
+        day: normalize_activity_record(record)
+        for day, record in data.items()
+        if isinstance(day, str)
+    }
+
+
+def save_activity_log(activity_log):
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    with ACTIVITY_LOG_FILE.open("w", encoding=TEXT_ENCODING) as file:
+        json.dump(activity_log, file, ensure_ascii=False, indent=2)
+
+
+def get_today_activity_record(activity_log):
+    today = date.today().isoformat()
+    activity_log[today] = normalize_activity_record(activity_log.get(today, {}))
+    return activity_log[today]
+
+
+def record_quiz_activity(
+    score=None,
+    wrong_added=0,
+    master_added=0,
+    retry_count=0,
+    review_to_wrong=0,
+    review_to_master=0,
+    wrong_to_master=0,
+    count_as_quiz=True,
+):
+    try:
+        activity_log = load_activity_log()
+        record = get_today_activity_record(activity_log)
+
+        if count_as_quiz:
+            record["quiz_count"] += 1
+
+        if score is not None:
+            record["similarity_scores"].append(int(score))
+
+        record["wrong_added"] += wrong_added
+        record["master_added"] += master_added
+        record["retry_count"] += retry_count
+        record["review_to_wrong"] += review_to_wrong
+        record["review_to_master"] += review_to_master
+        record["wrong_to_master"] += wrong_to_master
+        save_activity_log(activity_log)
+    except (OSError, TypeError, ValueError) as error:
+        print_warning(f"记录学习趋势失败，已跳过。{error}")
+
+
+def get_recent_dates(days):
+    today = date.today()
+    return [
+        (today - timedelta(days=offset)).isoformat()
+        for offset in range(days - 1, -1, -1)
+    ]
+
+
+def format_trend_date(day):
+    return day[5:]
+
+
+def build_bar(value, max_value, width=10, char="█"):
+    if max_value <= 0 or value <= 0:
+        return ""
+
+    length = round(value / max_value * width)
+    length = max(1, min(width, length))
+    return char * length
+
+
+def get_activity_average_score(record):
+    scores = record.get("similarity_scores", [])
+
+    if not scores:
+        return None
+
+    return round(sum(scores) / len(scores))
+
+
+def get_trend_rows(activity_log, days):
+    rows = []
+
+    for day in get_recent_dates(days):
+        record = normalize_activity_record(activity_log.get(day, {}))
+        rows.append(
+            {
+                "date": day,
+                "quiz_count": record["quiz_count"],
+                "average_score": get_activity_average_score(record),
+                "master_added": record["master_added"],
+                "retry_count": record["retry_count"],
+            }
+        )
+
+    return rows
+
+
+def print_count_trend_section(title, rows, key, icon, char="█"):
+    print_card_title(title, icon=icon)
+    max_value = max((row[key] for row in rows), default=0)
+
+    for row in rows:
+        value = row[key]
+        bar = build_bar(value, max_value, char=char)
+        suffix = f"  {bar}" if bar else ""
+        print(f"{format_trend_date(row['date'])}   {value:<3}{suffix}")
+
+
+def print_score_trend_section(rows):
+    print_card_title("平均正确度", icon="📊")
+
+    for row in rows:
+        score = row["average_score"]
+
+        if score is None:
+            print(f"{format_trend_date(row['date'])}   暂无")
+            continue
+
+        bar = build_bar(score, 100)
+        print(f"{format_trend_date(row['date'])}   {score:>3}%  {bar}")
+
+
+def build_trend_summary(rows, days):
+    active_days = sum(1 for row in rows if row["quiz_count"] > 0)
+    scored_rows = [row for row in rows if row["average_score"] is not None]
+    master_added_total = sum(row["master_added"] for row in rows)
+    lines = [f"最近 {days} 天有 {active_days} 天进行了复习。"]
+
+    if len(scored_rows) >= 2:
+        score_delta = scored_rows[-1]["average_score"] - scored_rows[0]["average_score"]
+
+        if score_delta >= 5:
+            lines.append("平均正确度整体略有提升。")
+        elif score_delta <= -5:
+            lines.append("平均正确度有所下降，建议放慢节奏复盘错题。")
+        else:
+            lines.append("平均正确度基本稳定。")
+    elif len(scored_rows) == 1:
+        lines.append("目前正确度样本还少，可以继续积累几天。")
+    else:
+        lines.append("还没有正确度记录，可以先做一次 Quiz。")
+
+    lines.append(f"最近 {days} 天共有 {master_added_total} 句进入 master。")
+    return lines
+
+
+def run_trend(days=7):
+    activity_log = load_activity_log()
+    rows = get_trend_rows(activity_log, days)
+
+    print_header(f"📈 最近 {days} 天学习趋势")
+    print_count_trend_section("Quiz 次数", rows, "quiz_count", "📚")
+    print_score_trend_section(rows)
+    print_count_trend_section("进入 master", rows, "master_added", "🎓", char="▊")
+    print_count_trend_section("重答次数", rows, "retry_count", "🔁", char="▊")
+
+    print_card_title("简单判断", icon="📎")
+    for line in build_trend_summary(rows, days):
+        print(line)
+
+
 def run_stats():
     pool_entries = load_all_pool_entries()
     pool_counts = get_pool_counts(pool_entries)
@@ -1843,6 +2061,7 @@ def get_backup_targets():
         BASE_DIR / "README.md",
         INPUT_FILE,
         INPUT_ARCHIVE_DIR,
+        ACTIVITY_LOG_FILE,
         OUTPUT_FILE,
         WRONG_BOOK_FILE,
         MASTERED_FILE,
@@ -2496,6 +2715,7 @@ def run_retry_once(sentence, review_data, speak_enabled=False, voice="Kyoko", sp
     print_retry_similarity_panel(similarity_result)
     if speak_enabled:
         maybe_speak_japanese(sentence["japanese"], voice, speak_state)
+    record_quiz_activity(score=similarity_result["score"], retry_count=1)
     update_similarity_record(review_data, sentence, similarity_result["score"])
     save_review_data(DATA_FILE, review_data)
     return False, True
@@ -2605,6 +2825,7 @@ def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enable
         print_quiz_answer(answer, sentence, similarity_result)
         if speak_enabled:
             maybe_speak_japanese(sentence["japanese"], voice, speak_state)
+        record_quiz_activity(score=similarity_result["score"])
         update_similarity_record(review_data, sentence, similarity_result["score"])
         save_review_data(DATA_FILE, review_data)
 
@@ -2644,6 +2865,11 @@ def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enable
                         target_pool="master",
                         source_pool="review",
                     )
+                    record_quiz_activity(
+                        master_added=1 if sync_result["added"] else 0,
+                        review_to_master=1 if sync_result["removed_from_review"] else 0,
+                        count_as_quiz=False,
+                    )
 
                     if sync_result["removed_from_review"]:
                         print_success(f"已从 review 移入 master：{sentence['japanese']}")
@@ -2663,6 +2889,12 @@ def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enable
                 new_wrong_count += 1
             else:
                 duplicate_wrong_count += 1
+
+            record_quiz_activity(
+                wrong_added=1 if sync_result["added"] else 0,
+                review_to_wrong=1 if sync_result["removed_from_review"] else 0,
+                count_as_quiz=False,
+            )
 
             if sync_result["removed_from_review"]:
                 sentences = [
@@ -2763,6 +2995,7 @@ def run_wrong_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enabled=
         print_quiz_answer(answer, entry, similarity_result)
         if speak_enabled:
             maybe_speak_japanese(entry["japanese"], voice, speak_state)
+        record_quiz_activity(score=similarity_result["score"])
         update_similarity_record(review_data, entry, similarity_result["score"])
         save_review_data(DATA_FILE, review_data)
 
@@ -2790,6 +3023,11 @@ def run_wrong_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enabled=
                     entry,
                     target_pool="master",
                     source_pool="wrong",
+                )
+                record_quiz_activity(
+                    master_added=1 if sync_result["added"] else 0,
+                    wrong_to_master=1 if sync_result["removed_from_wrong"] else 0,
+                    count_as_quiz=False,
                 )
                 entries = [
                     item
@@ -2868,6 +3106,7 @@ def print_menu():
     print("8. 今日学习面板 (--today)")
     print("9. 三池统计面板 (--stats)")
     print("10. 查看复习建议 (--plan)")
+    print("11. 查看学习趋势 (--trend)")
     print("0. 退出")
     print_blank_line()
     print("0 / q：退出")
@@ -2900,6 +3139,32 @@ def read_positive_int_from_menu(prompt, default_value=1):
         return None, True
 
     return number, False
+
+
+def read_trend_days_from_menu():
+    value = read_menu_input("显示最近几天？回车默认 7：")
+
+    if not value:
+        return 7, False
+
+    if is_quit_input(value) or value == "0":
+        return None, True
+
+    try:
+        days = int(value)
+    except ValueError:
+        print_warning("请输入有效数字，已使用默认 7 天。")
+        return 7, False
+
+    if days < 1:
+        print_warning("趋势天数需要大于 0，已使用默认 7 天。")
+        return 7, False
+
+    if days > 30:
+        print_warning("趋势天数最多显示 30 天，已使用 30 天。")
+        return 30, False
+
+    return days, False
 
 
 def wait_for_menu_return():
@@ -3148,12 +3413,20 @@ def run_menu_action(choice):
     elif choice == "10":
         run_plan()
         return True
+    elif choice == "11":
+        days, canceled = read_trend_days_from_menu()
+
+        if canceled:
+            return False
+
+        run_trend(days)
+        return True
 
     return False
 
 
 def run_menu():
-    valid_choices = {str(number) for number in range(1, 11)}
+    valid_choices = {str(number) for number in range(1, 12)}
 
     while True:
         print_menu()
@@ -3194,6 +3467,7 @@ def parse_args():
     parser.add_argument("--stats", action="store_true", help="显示学习统计面板")
     parser.add_argument("--today", action="store_true", help="显示今日学习面板")
     parser.add_argument("--plan", action="store_true", help="显示今日复习建议")
+    parser.add_argument("--trend", action="store_true", help="显示最近学习趋势")
     parser.add_argument("--tags", action="store_true", help="显示标签统计")
     parser.add_argument("--tag", help="按指定标签抽查")
     parser.add_argument("--grammar", default="", help="快速添加时填写语法点")
@@ -3211,6 +3485,12 @@ def parse_args():
         default=1,
         help="随机抽查题数，默认 1",
     )
+    parser.add_argument(
+        "--days",
+        type=int,
+        default=7,
+        help="趋势显示天数，默认 7 天",
+    )
     return parser.parse_args()
 
 
@@ -3226,6 +3506,10 @@ def main():
 
     if args.count < 1 and not args.loop:
         print_error("--count 需要是大于 0 的整数。")
+        return
+
+    if args.trend and not 1 <= args.days <= 30:
+        print_error("--days 需要在 1 到 30 之间。")
         return
 
     if args.reset:
@@ -3250,6 +3534,8 @@ def main():
         run_today()
     elif args.plan:
         run_plan()
+    elif args.trend:
+        run_trend(args.days)
     elif args.stats:
         run_stats()
     elif args.quiz:

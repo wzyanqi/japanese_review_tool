@@ -99,6 +99,12 @@ python3 japanese_review.py --menu
 python3 japanese_review.py --plan
 ```
 
+查看最近学习趋势：
+
+```bash
+python3 japanese_review.py --trend
+```
+
 快速添加一句：
 
 ```bash
@@ -286,12 +292,15 @@ V13.5 起，菜单模式会显示统一主菜单：
 8. 今日学习面板 (--today)
 9. 三池统计面板 (--stats)
 10. 查看复习建议 (--plan)
+11. 查看学习趋势 (--trend)
 0. 退出
 ```
 
 普通 Quiz 和错题 Quiz 都有子菜单，可以选择随机抽题、指定数量或 loop 模式。快速添加会依次询问日语、中文、标签、语法点、重点单词和备注，并在确认后加入 review 池。导入、备份和重置也会先询问确认；重置仍保留原有 `RESET` 二次确认，避免误清空数据。
 
 V13.6 起，菜单中也可以选择“查看复习建议”，它会根据当前三池状态和今日新增数量给出下一步建议。
+
+V14.5 起，菜单中也可以选择“查看学习趋势”，用 Console 字符条形图查看最近几天的学习活动。
 
 在菜单中可以输入数字选择功能，输入 `0`、`q` 或 `quit` 返回或退出。执行完一个功能后，按回车会返回主菜单。
 
@@ -594,6 +603,37 @@ output/daily/YYYY-MM-DD.md
 - `--plan` 用来决定下一步做什么
 
 也可以通过 `--menu` 进入菜单后选择“查看复习建议”。
+
+## 学习趋势
+
+运行：
+
+```bash
+python3 japanese_review.py --trend
+```
+
+会显示最近 7 天的学习趋势，包括：
+
+- Quiz 次数
+- 平均正确度
+- 进入 master 的句子数
+- 重答次数
+
+趋势图使用 Console 字符条形图，不需要图形界面，也不依赖网络。
+
+可以指定天数，范围为 1 到 30：
+
+```bash
+python3 japanese_review.py --trend --days 14
+```
+
+趋势数据保存在：
+
+```text
+output/activity_log.json
+```
+
+`activity_log.json` 是本地学习活动日志，会被 `--backup` 备份。
 
 ## 今日学习面板
 
