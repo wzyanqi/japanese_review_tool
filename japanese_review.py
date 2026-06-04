@@ -35,6 +35,7 @@ GRADUATION_THRESHOLD = 3
 SEPARATOR = "────────────────────────────"
 USE_COLOR = True
 DEBUG_INPUT = False
+IGNORABLE_DIFF_CHARS = set(" 　。、.,!！?？")
 RESET = "\033[0m"
 BOLD = "\033[1m"
 GREEN = "\033[32m"
@@ -202,6 +203,72 @@ def get_similarity_feedback(score):
         return "⚠️ 部分正确，需要复习", YELLOW
 
     return "❌ 差异较大，建议加入错题", RED
+
+
+def get_diff_context(reference, start, end, window=4):
+    left = max(0, start - window)
+    right = min(len(reference), end + window)
+    return reference[left:right]
+
+
+def is_ignorable_diff(text):
+    return all(char in IGNORABLE_DIFF_CHARS for char in text)
+
+
+def build_diff_hints(answer, reference, max_hints=3):
+    hints = []
+    hidden_count = 0
+    matcher = SequenceMatcher(None, answer, reference)
+
+    for (
+        diff_type,
+        answer_start,
+        answer_end,
+        reference_start,
+        reference_end,
+    ) in matcher.get_opcodes():
+        if diff_type == "equal":
+            continue
+
+        answer_part = answer[answer_start:answer_end]
+        reference_part = reference[reference_start:reference_end]
+
+        if is_ignorable_diff(answer_part) and is_ignorable_diff(reference_part):
+            continue
+
+        if diff_type == "insert":
+            label = "可能少写"
+            label_color = YELLOW
+            context_start = reference_start
+            context_end = reference_end
+        elif diff_type == "delete":
+            label = "可能多写"
+            label_color = YELLOW
+            context_start = reference_start
+            context_end = reference_start
+        elif diff_type == "replace":
+            label = "可能写错"
+            label_color = RED
+            context_start = reference_start
+            context_end = reference_end
+        else:
+            continue
+
+        hint = {
+            "type": diff_type,
+            "label": label,
+            "label_color": label_color,
+            "answer_part": answer_part,
+            "reference_part": reference_part,
+            "context": get_diff_context(reference, context_start, context_end),
+        }
+
+        if len(hints) < max_hints:
+            hints.append(hint)
+        else:
+            hidden_count += 1
+
+    return hints, hidden_count
 
 
 def build_review_data_key(entry):
@@ -2599,6 +2666,107 @@ def print_quiz_summary(
     )
 
 
+def create_round_summary():
+    return {
+        "quiz_count": 0,
+        "wrong_new": [],
+        "master_new": [],
+        "retry_count": 0,
+    }
+
+
+def add_round_sentence(round_summary, key, sentence):
+    japanese = normalize_optional_text(sentence.get("japanese", ""))
+
+    if japanese and japanese not in round_summary[key]:
+        round_summary[key].append(japanese)
+
+
+def print_limited_sentence_list(title, sentences, limit=10):
+    print(f"{title}：{len(sentences)} 题")
+
+    if not sentences:
+        print("无")
+        return
+
+    for index, sentence in enumerate(sentences[:limit], start=1):
+        print(f"{index}. {sentence}")
+
+    hidden_count = len(sentences) - limit
+
+    if hidden_count > 0:
+        print(f"还有 {hidden_count} 条未显示。")
+
+
+def build_round_next_step_advice(round_summary, pool_counts=None):
+    if pool_counts is None:
+        pool_counts = get_pool_counts()
+
+    quiz_count = round_summary["quiz_count"]
+    wrong_new_count = len(round_summary["wrong_new"])
+    master_new_count = len(round_summary["master_new"])
+    review_count = pool_counts["review_count"]
+    wrong_count = pool_counts["wrong_count"]
+
+    if quiz_count == 0:
+        return "本轮还没有完成题目，可以先做普通 Quiz 或错题 Quiz。"
+
+    if wrong_new_count > 0:
+        return f"建议先复习新增错题 {min(wrong_new_count, 3)} 题，然后继续普通 Quiz。"
+
+    if master_new_count > 0 and wrong_count == 0:
+        return "本轮错题已掌握，下一轮可添加新句子或继续普通 Quiz。"
+
+    if wrong_count > 0:
+        return f"wrong 池还有 {wrong_count} 题，建议继续做错题 Quiz 巩固。"
+
+    if review_count > 0:
+        return "本轮状态不错，可以继续普通 Quiz。"
+
+    return "当前 review 和 wrong 都比较干净，可以添加新句子。"
+
+
+def print_round_summary(round_summary):
+    pool_counts = get_pool_counts()
+    print_card_title("本轮复习小结", icon="✅")
+    print_summary(
+        [
+            ("本轮抽查", f"{round_summary['quiz_count']} 题"),
+            ("新增错题", f"{len(round_summary['wrong_new'])} 题"),
+            ("进入 master", f"{len(round_summary['master_new'])} 题"),
+            ("重答次数", f"{round_summary['retry_count']} 次"),
+        ]
+    )
+    print_blank_line()
+    print_limited_sentence_list("新增错题", round_summary["wrong_new"])
+    print_blank_line()
+    print_limited_sentence_list("进入 master", round_summary["master_new"])
+    print_card_title("下一步建议", icon="📎")
+    print(build_round_next_step_advice(round_summary, pool_counts))
+
+
+def print_quiz_end_summary(
+    asked_count,
+    mastered_count,
+    new_wrong_count,
+    duplicate_wrong_count,
+    graduated_count,
+    retry_count,
+    round_summary,
+):
+    round_summary["quiz_count"] = asked_count
+    round_summary["retry_count"] = retry_count
+    print_quiz_summary(
+        asked_count,
+        mastered_count,
+        new_wrong_count,
+        duplicate_wrong_count,
+        graduated_count,
+        retry_count,
+    )
+    print_round_summary(round_summary)
+
+
 def format_quiz_index(index, count, loop=False):
     if loop:
         return str(index)
@@ -2666,6 +2834,45 @@ def print_retry_similarity_panel(similarity_result):
     print(color_text(similarity_result["reference_answer"], GREEN))
 
 
+def print_diff_hints(answer, reference):
+    try:
+        hints, hidden_count = build_diff_hints(answer, reference)
+    except Exception as error:
+        print_warning(f"差异提示生成失败，已跳过。{error}")
+        return
+
+    print_card_title("差异提示", icon="🔍")
+
+    if not hints:
+        print("未发现明显差异。")
+        return
+
+    for index, hint in enumerate(hints, start=1):
+        prefix = f"{index}. " if len(hints) > 1 or hidden_count else ""
+        label = hint["label"]
+
+        if hint["type"] == "replace":
+            print(color_text(f"{prefix}{label}：", hint["label_color"]))
+            print(f"   {color_text('你的输入：', GRAY)}{color_text(hint['answer_part'], GRAY)}")
+            print(f"   {color_text('参考答案：', GREEN)}{color_text(hint['reference_part'], GREEN)}")
+        elif hint["type"] == "insert":
+            print(
+                color_text(f"{prefix}{label}：", hint["label_color"])
+                + color_text(hint["reference_part"], GREEN)
+            )
+        else:
+            print(
+                color_text(f"{prefix}{label}：", hint["label_color"])
+                + color_text(hint["answer_part"], GRAY)
+            )
+
+        if hint["context"]:
+            print(f"   差异附近：{hint['context']}")
+
+    if hidden_count:
+        print(f"仅显示前 {len(hints)} 处差异，另有 {hidden_count} 处未显示。")
+
+
 def print_quiz_answer(answer, sentence, similarity_result):
     print_card_title("参考答案", icon="📖")
     print(color_text("你的输入：", GRAY))
@@ -2674,6 +2881,7 @@ def print_quiz_answer(answer, sentence, similarity_result):
     print(color_text("✅ 参考答案：", GREEN))
     print(color_text(sentence["japanese"], GREEN))
     print_similarity_panel(similarity_result)
+    print_diff_hints(answer, sentence["japanese"])
     print("")
     print(color_text("🇨🇳 中文意思：", CYAN))
     print(color_text(sentence["chinese"], CYAN))
@@ -2714,6 +2922,7 @@ def run_retry_once(sentence, review_data, speak_enabled=False, voice="Kyoko", sp
     similarity_result = build_similarity_result(retry_answer, sentence, review_data)
     similarity_result["reference_answer"] = sentence["japanese"]
     print_retry_similarity_panel(similarity_result)
+    print_diff_hints(retry_answer, sentence["japanese"])
     if speak_enabled:
         maybe_speak_japanese(sentence["japanese"], voice, speak_state)
     record_quiz_activity(score=similarity_result["score"], retry_count=1)
@@ -2798,6 +3007,7 @@ def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enable
     review_data = load_review_data(DATA_FILE)
     last_japanese = None
     speak_state = {"warning_shown": False}
+    round_summary = create_round_summary()
 
     while loop or index <= count:
         sentence = choose_next_question(sentences, last_japanese)
@@ -2812,13 +3022,14 @@ def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enable
         answer = print_quiz_prompt(index, count, sentence, loop=loop)
 
         if answer.lower() in ("q", "quit"):
-            print_quiz_summary(
+            print_quiz_end_summary(
                 asked_count - 1,
                 mastered_count,
                 new_wrong_count,
                 duplicate_wrong_count,
                 0,
                 retry_count,
+                round_summary,
             )
             return
 
@@ -2833,13 +3044,14 @@ def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enable
         assessment = ask_self_assessment()
 
         if assessment in ("q", "quit"):
-            print_quiz_summary(
+            print_quiz_end_summary(
                 asked_count,
                 mastered_count,
                 new_wrong_count,
                 duplicate_wrong_count,
                 0,
                 retry_count,
+                round_summary,
             )
             return
 
@@ -2850,13 +3062,14 @@ def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enable
                 mastery_answer = ask_mark_mastered()
 
                 if mastery_answer in ("q", "quit"):
-                    print_quiz_summary(
+                    print_quiz_end_summary(
                         asked_count,
                         mastered_count,
                         new_wrong_count,
                         duplicate_wrong_count,
                         0,
                         retry_count,
+                        round_summary,
                     )
                     return
 
@@ -2871,6 +3084,9 @@ def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enable
                         review_to_master=1 if sync_result["removed_from_review"] else 0,
                         count_as_quiz=False,
                     )
+
+                    if sync_result["added"] or sync_result["removed_from_review"]:
+                        add_round_sentence(round_summary, "master_new", sentence)
 
                     if sync_result["removed_from_review"]:
                         print_success(f"已从 review 移入 master：{sentence['japanese']}")
@@ -2888,6 +3104,7 @@ def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enable
 
             if sync_result["added"]:
                 new_wrong_count += 1
+                add_round_sentence(round_summary, "wrong_new", sentence)
             else:
                 duplicate_wrong_count += 1
 
@@ -2917,13 +3134,14 @@ def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enable
                     retry_count += 1
 
                 if should_quit:
-                    print_quiz_summary(
+                    print_quiz_end_summary(
                         asked_count,
                         mastered_count,
                         new_wrong_count,
                         duplicate_wrong_count,
                         0,
                         retry_count,
+                        round_summary,
                     )
                     return
 
@@ -2933,13 +3151,14 @@ def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enable
             print_warning("review 池已经没有可复习句子。")
             break
 
-    print_quiz_summary(
+    print_quiz_end_summary(
         asked_count,
         mastered_count,
         new_wrong_count,
         duplicate_wrong_count,
         0,
         retry_count,
+        round_summary,
     )
 
 
@@ -2963,6 +3182,7 @@ def run_wrong_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enabled=
     review_data = load_review_data(DATA_FILE)
     last_japanese = None
     speak_state = {"warning_shown": False}
+    round_summary = create_round_summary()
 
     while loop or index <= count:
         if not entries:
@@ -2982,13 +3202,14 @@ def run_wrong_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enabled=
 
         if answer.lower() in ("q", "quit"):
             save_wrong_book_entries(entries)
-            print_quiz_summary(
+            print_quiz_end_summary(
                 asked_count - 1,
                 mastered_count,
                 0,
                 0,
                 graduated_count,
                 retry_count,
+                round_summary,
             )
             return
 
@@ -3004,13 +3225,14 @@ def run_wrong_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enabled=
 
         if assessment in ("q", "quit"):
             save_wrong_book_entries(entries)
-            print_quiz_summary(
+            print_quiz_end_summary(
                 asked_count,
                 mastered_count,
                 0,
                 0,
                 graduated_count,
                 retry_count,
+                round_summary,
             )
             return
 
@@ -3036,6 +3258,7 @@ def run_wrong_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enabled=
                     if item.get("japanese") != entry["japanese"]
                 ]
                 graduated_count += 1
+                add_round_sentence(round_summary, "master_new", entry)
 
                 if sync_result["added"]:
                     print(f"🎉 恭喜，这条错题已掌握并移入 mastered.md：{entry['japanese']}")
@@ -3055,20 +3278,29 @@ def run_wrong_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enabled=
 
             if should_quit:
                 save_wrong_book_entries(entries)
-                print_quiz_summary(
+                print_quiz_end_summary(
                     asked_count,
                     mastered_count,
                     0,
                     0,
                     graduated_count,
                     retry_count,
+                    round_summary,
                 )
                 return
 
         index += 1
 
     save_wrong_book_entries(entries)
-    print_quiz_summary(asked_count, mastered_count, 0, 0, graduated_count, retry_count)
+    print_quiz_end_summary(
+        asked_count,
+        mastered_count,
+        0,
+        0,
+        graduated_count,
+        retry_count,
+        round_summary,
+    )
 
 
 def run_quiz(count, wrong_only=False, tag=None, loop=False, retry_wrong=True, speak_enabled=False, voice="Kyoko"):
