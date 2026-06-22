@@ -1379,6 +1379,100 @@ def build_stats_advices(pool_counts):
     return ["当前还没有句子，请先用 --add 或 input/sentences.txt 添加句子。"]
 
 
+def build_start_recommendation(pool_counts=None, today_new_count=None):
+    if pool_counts is None:
+        pool_counts = get_pool_counts()
+
+    if today_new_count is None:
+        today_new_count = get_today_new_count()
+
+    review_count = pool_counts["review_count"]
+    wrong_count = pool_counts["wrong_count"]
+    master_count = pool_counts["master_count"]
+    total_count = pool_counts["total_managed_count"]
+    extra_message = ""
+
+    if today_new_count > 5:
+        extra_message = f"今天已经新增 {today_new_count} 句，建议优先复习消化，不要继续大量新增。"
+
+    if total_count == 0:
+        return {
+            "mode": "add",
+            "message": "当前还没有句子，建议先添加 3 条 N5-N4 句子。",
+            "extra_message": extra_message,
+            "quiz_count": 0,
+            "estimated_minutes": 3,
+        }
+
+    if wrong_count >= 10:
+        return {
+            "mode": "wrong",
+            "message": f"wrong 池错题较多，建议先做错题 Quiz 10 题。",
+            "extra_message": extra_message,
+            "quiz_count": 10,
+            "estimated_minutes": 10,
+        }
+
+    if wrong_count > 0:
+        quiz_count = min(5, wrong_count)
+        return {
+            "mode": "wrong",
+            "message": f"wrong 池还有 {wrong_count} 句，建议先做错题 Quiz {quiz_count} 题。",
+            "extra_message": extra_message,
+            "quiz_count": quiz_count,
+            "estimated_minutes": quiz_count,
+        }
+
+    if review_count >= 10:
+        return {
+            "mode": "regular",
+            "message": f"review 池还有 {review_count} 句，建议做普通 Quiz 5 题。",
+            "extra_message": extra_message,
+            "quiz_count": 5,
+            "estimated_minutes": 5,
+        }
+
+    if review_count > 0:
+        quiz_count = min(3, review_count)
+        return {
+            "mode": "regular",
+            "message": f"review 池还有少量句子，建议做普通 Quiz {quiz_count} 题。",
+            "extra_message": extra_message,
+            "quiz_count": quiz_count,
+            "estimated_minutes": quiz_count,
+        }
+
+    if master_count > 0:
+        return {
+            "mode": "add",
+            "message": "当前 review 和 wrong 都已清空，可以新增 1-3 句继续积累。",
+            "extra_message": extra_message,
+            "quiz_count": 0,
+            "estimated_minutes": 3,
+        }
+
+    return {
+        "mode": "add",
+        "message": "当前还没有可复习句子，建议先添加新句子。",
+        "extra_message": extra_message,
+        "quiz_count": 0,
+        "estimated_minutes": 3,
+    }
+
+
+def print_today_recommendation(recommendation):
+    print_card_title("今日推荐", icon="📌")
+    print(recommendation["message"])
+
+    if recommendation.get("extra_message"):
+        print(recommendation["extra_message"])
+
+    estimated_minutes = recommendation.get("estimated_minutes", 0)
+
+    if estimated_minutes:
+        print(f"预计用时：{estimated_minutes} 分钟。")
+
+
 def count_filled_field(entries, field_name):
     return sum(1 for entry in entries if normalize_optional_text(entry.get(field_name, "")))
 
@@ -3437,19 +3531,20 @@ def read_menu_choice(prompt):
 
 def print_menu():
     print_header("📘 日语复习工具", "菜单模式")
+    print_today_recommendation(build_start_recommendation())
     print_blank_line()
     print("请选择功能：")
     print_blank_line()
-    print("1. 普通 Quiz（可将熟句移入 master）")
-    print("2. 错题 Quiz")
-    print("3. 快速添加句子")
-    print("4. 导入句子 (input/sentences.txt)")
-    print("5. 备份数据")
-    print("6. 重置 / 清空当前状态")
-    print("7. 今日学习面板 (--today)")
-    print("8. 三池统计面板 (--stats)")
-    print("9. 查看复习建议 (--plan)")
-    print("10. 查看学习趋势 (--trend)")
+    print("1. 开始今日推荐复习")
+    print("2. 普通 Quiz")
+    print("3. 错题 Quiz")
+    print("4. 快速添加句子")
+    print("5. 批量导入 sentences.txt")
+    print("6. 今日学习面板")
+    print("7. 当前库存")
+    print("8. 今天该做什么")
+    print("9. 最近有没有坚持")
+    print("10. 一键备份")
     print("0. 退出")
     print_blank_line()
     print("0 / q：退出")
@@ -3543,6 +3638,26 @@ def confirm_menu_action(prompt):
 
 def ask_menu_speak_enabled():
     return confirm_menu_action("是否开启日语朗读？y/n：")
+
+
+def run_menu_recommended_quiz():
+    recommendation = build_start_recommendation()
+    mode = recommendation["mode"]
+
+    if mode == "add":
+        print_today_recommendation(recommendation)
+        print_warning("当前没有推荐 Quiz，请先使用：")
+        print("4. 快速添加句子")
+        print("5. 批量导入 sentences.txt")
+        return True
+
+    speak_enabled = ask_menu_speak_enabled()
+    run_quiz(
+        recommendation["quiz_count"],
+        wrong_only=mode == "wrong",
+        speak_enabled=speak_enabled,
+    )
+    return True
 
 
 def run_menu_regular_quiz():
@@ -3723,27 +3838,25 @@ def run_menu_reset():
 
 def run_menu_action(choice):
     if choice == "1":
-        return run_menu_regular_quiz()
+        return run_menu_recommended_quiz()
     elif choice == "2":
-        return run_menu_wrong_quiz()
+        return run_menu_regular_quiz()
     elif choice == "3":
-        return run_menu_add()
+        return run_menu_wrong_quiz()
     elif choice == "4":
-        return run_menu_import()
+        return run_menu_add()
     elif choice == "5":
-        return run_menu_backup()
+        return run_menu_import()
     elif choice == "6":
-        return run_menu_reset()
-    elif choice == "7":
         run_today()
         return True
-    elif choice == "8":
+    elif choice == "7":
         run_stats()
         return True
-    elif choice == "9":
+    elif choice == "8":
         run_plan()
         return True
-    elif choice == "10":
+    elif choice == "9":
         days, canceled = read_trend_days_from_menu()
 
         if canceled:
@@ -3751,6 +3864,8 @@ def run_menu_action(choice):
 
         run_trend(days)
         return True
+    elif choice == "10":
+        return run_menu_backup()
 
     return False
 
