@@ -3411,7 +3411,13 @@ def run_quiz(count, wrong_only=False, tag=None, loop=False, retry_wrong=True, sp
 
 
 def normalize_menu_choice(value):
-    return unicodedata.normalize("NFKC", value.strip()).lower()
+    normalized = unicodedata.normalize("NFKC", value.strip()).lower()
+    compacted = normalized.replace(" ", "")
+
+    if compacted.isdigit():
+        return compacted
+
+    return normalized
 
 
 def is_quit_input(value):
