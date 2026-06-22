@@ -624,6 +624,7 @@ def load_wrong_book_entries():
                     "words": "",
                     "note": "",
                     "added_date": current_section_date,
+                    "last_reviewed": "",
                     "mastery_count": 0,
                     "status": "待复习",
                 }
@@ -645,6 +646,8 @@ def load_wrong_book_entries():
                 current_entry["note"] = line.removeprefix("- 备注：").strip()
             elif line.startswith("- 加入日期："):
                 current_entry["added_date"] = line.removeprefix("- 加入日期：").strip()
+            elif line.startswith("- 最后复习日期："):
+                current_entry["last_reviewed"] = line.removeprefix("- 最后复习日期：").strip()
             elif line.startswith("- 掌握次数："):
                 value = line.removeprefix("- 掌握次数：").strip()
 
@@ -743,6 +746,7 @@ def save_wrong_book_entries(entries):
                 file.write(f"{line}\n")
 
             file.write(f"- 加入日期：{entry['added_date']}\n")
+            file.write(f"- 最后复习日期：{entry.get('last_reviewed', '')}\n")
             file.write(f"- 掌握次数：{entry['mastery_count']}\n")
             file.write("- 状态：待复习\n")
 
@@ -946,6 +950,7 @@ def append_wrong_book(sentence):
             "words": get_entry_words(sentence),
             "note": get_entry_note(sentence),
             "added_date": date.today().isoformat(),
+            "last_reviewed": "",
             "mastery_count": 0,
             "status": "待复习",
         }
@@ -2403,6 +2408,7 @@ def parse_markdown_entries_for_check(file_path, defaults):
                     "status": defaults["status"],
                     "date": current_section_date,
                     "added_date": current_section_date,
+                    "last_reviewed": "",
                     "wrong_date": "",
                     "mastered_date": current_section_date,
                     "mastered_source": "",
@@ -2442,6 +2448,8 @@ def parse_markdown_entries_for_check(file_path, defaults):
                 current_entry["status"] = line.removeprefix("- 状态：").strip()
             elif line.startswith("- 加入日期："):
                 current_entry["added_date"] = line.removeprefix("- 加入日期：").strip()
+            elif line.startswith("- 最后复习日期："):
+                current_entry["last_reviewed"] = line.removeprefix("- 最后复习日期：").strip()
             elif line.startswith("- 掌握次数："):
                 current_entry["has_mastery_count"] = True
                 current_entry["mastery_count"] = line.removeprefix("- 掌握次数：").strip()
@@ -2967,6 +2975,69 @@ def maybe_speak_japanese(text, voice, speak_state):
     return speak_japanese(text, voice)
 
 
+def parse_iso_date(value):
+    value = normalize_optional_text(value)
+
+    if not value:
+        return None
+
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def get_days_since_last_reviewed(last_reviewed):
+    reviewed_date = parse_iso_date(last_reviewed)
+
+    if reviewed_date is None:
+        return None
+
+    return max(0, (date.today() - reviewed_date).days)
+
+
+def get_wrong_time_weight(last_reviewed):
+    days_since = get_days_since_last_reviewed(last_reviewed)
+
+    if days_since is None:
+        return 12
+
+    if days_since == 0:
+        return 1
+
+    if days_since <= 2:
+        return 2
+
+    if days_since <= 6:
+        return 4
+
+    if days_since <= 14:
+        return 8
+
+    return 12
+
+
+def get_wrong_mastery_weight(mastery_count):
+    mastery_count = normalize_similarity_count(mastery_count)
+
+    if mastery_count <= 0:
+        return 6
+
+    if mastery_count == 1:
+        return 3
+
+    if mastery_count == 2:
+        return 1
+
+    return 0
+
+
+def get_wrong_forgetting_weight(entry):
+    return get_wrong_time_weight(entry.get("last_reviewed", "")) + get_wrong_mastery_weight(
+        entry.get("mastery_count", 0)
+    )
+
+
 def choose_next_question(candidates, last_japanese=None):
     if not candidates:
         return None
@@ -2984,6 +3055,26 @@ def choose_next_question(candidates, last_japanese=None):
         available_candidates = candidates
 
     return random.choice(available_candidates)
+
+
+def choose_next_wrong_question(entries, last_japanese=None):
+    if not entries:
+        return None
+
+    if len(entries) == 1:
+        return entries[0]
+
+    candidates = [
+        entry
+        for entry in entries
+        if entry.get("japanese") != last_japanese
+    ]
+
+    if not candidates:
+        candidates = entries
+
+    weights = [max(1, get_wrong_forgetting_weight(entry)) for entry in candidates]
+    return random.choices(candidates, weights=weights, k=1)[0]
 
 
 def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enabled=False, voice="Kyoko"):
@@ -3163,8 +3254,8 @@ def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enable
 
 
 def run_wrong_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enabled=False, voice="Kyoko"):
-    entries = load_wrong_book_entries()
-    entries = filter_sentences_by_tag(entries, tag)
+    all_entries = load_wrong_book_entries()
+    entries = filter_sentences_by_tag(all_entries, tag)
 
     if not entries:
         if tag:
@@ -3189,7 +3280,7 @@ def run_wrong_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enabled=
             print_success("错题本已经清空。")
             break
 
-        entry = choose_next_question(entries, last_japanese)
+        entry = choose_next_wrong_question(entries, last_japanese)
 
         if entry is None:
             print_success("错题本已经清空。")
@@ -3201,7 +3292,7 @@ def run_wrong_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enabled=
         answer = print_quiz_prompt(index, count, entry, wrong_mode=True, loop=loop)
 
         if answer.lower() in ("q", "quit"):
-            save_wrong_book_entries(entries)
+            save_wrong_book_entries(all_entries)
             print_quiz_end_summary(
                 asked_count - 1,
                 mastered_count,
@@ -3213,6 +3304,7 @@ def run_wrong_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enabled=
             )
             return
 
+        entry["last_reviewed"] = date.today().isoformat()
         similarity_result = build_similarity_result(answer, entry, review_data)
         print_quiz_answer(answer, entry, similarity_result)
         if speak_enabled:
@@ -3224,7 +3316,7 @@ def run_wrong_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enabled=
         assessment = ask_self_assessment()
 
         if assessment in ("q", "quit"):
-            save_wrong_book_entries(entries)
+            save_wrong_book_entries(all_entries)
             print_quiz_end_summary(
                 asked_count,
                 mastered_count,
@@ -3257,6 +3349,11 @@ def run_wrong_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enabled=
                     for item in entries
                     if item.get("japanese") != entry["japanese"]
                 ]
+                all_entries = [
+                    item
+                    for item in all_entries
+                    if item.get("japanese") != entry["japanese"]
+                ]
                 graduated_count += 1
                 add_round_sentence(round_summary, "master_new", entry)
 
@@ -3277,7 +3374,7 @@ def run_wrong_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enabled=
                 retry_count += 1
 
             if should_quit:
-                save_wrong_book_entries(entries)
+                save_wrong_book_entries(all_entries)
                 print_quiz_end_summary(
                     asked_count,
                     mastered_count,
@@ -3291,7 +3388,7 @@ def run_wrong_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enabled=
 
         index += 1
 
-    save_wrong_book_entries(entries)
+    save_wrong_book_entries(all_entries)
     print_quiz_end_summary(
         asked_count,
         mastered_count,

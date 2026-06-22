@@ -383,6 +383,8 @@ output/daily/YYYY-MM-DD.md
 - 掌握次数达到 3 次后，句子从 wrong 移入 master
 - 自评 `n` 则留在 wrong，并触发“答错后重答一次”
 
+V15.0 起，错题 Quiz 会优先抽取更久没复习、掌握次数更低的错题。程序会在 `wrong_book.md` 中记录每条错题的“最后复习日期”，旧错题缺少该字段时会按“很久没复习”处理，并在下次写回时自动补齐。
+
 因此 `japanese_review.md` 会随着学习推进而减少，`wrong_book.md` 会随着错题毕业而减少，`mastered.md` 会逐渐增加。
 
 从 V13.1 开始，`mastered.md` 具有最高状态优先级。当一句话进入 `mastered.md` 后，程序会自动检查 `japanese_review.md` 和 `wrong_book.md`。如果 review 或 wrong 中仍有同一句日语，程序会自动删除对应记录，避免同一句同时处于“待复习”“错题”和“已掌握”多个状态。
