@@ -1483,6 +1483,29 @@ def get_today_new_count():
     return len(load_quiz_sentences(daily_output_file))
 
 
+def get_week_start(today=None):
+    if today is None:
+        today = date.today()
+
+    return today - timedelta(days=today.weekday())
+
+
+def get_next_master_target(master_count):
+    if master_count < 50:
+        return 50
+
+    if master_count < 100:
+        return 100
+
+    if master_count < 200:
+        return 200
+
+    if master_count < 500:
+        return 500
+
+    return 1000
+
+
 def default_activity_record():
     return {
         "quiz_count": 0,
@@ -2828,6 +2851,109 @@ def build_round_next_step_advice(round_summary, pool_counts=None):
     return "当前 review 和 wrong 都比较干净，可以添加新句子。"
 
 
+def build_post_quiz_next_step_advice(today_reviewed, wrong_count, review_count, mastered_today):
+    if review_count == 0 and wrong_count == 0:
+        return "当前 review 和 wrong 都已清空，可以新增 1-3 句继续积累。"
+
+    if wrong_count >= 10:
+        return f"wrong 池仍有 {wrong_count} 句，建议继续做错题 Quiz 5 题。"
+
+    if today_reviewed < 5:
+        if wrong_count > 0:
+            return "今天复习量还比较少，建议再做错题 Quiz 3 题。"
+
+        return "今天复习量还比较少，建议再做普通 Quiz 3 题。"
+
+    if today_reviewed < 10:
+        return "今天已经完成一轮有效复习，可以收工；如果还有精力，再做 3 题即可。"
+
+    return "今天复习已经比较充分，可以收工了，明天继续。"
+
+
+def build_long_term_progress_summary():
+    activity_log = load_activity_log()
+    today = date.today()
+    today_key = today.isoformat()
+    week_start = get_week_start(today)
+    today_record = normalize_activity_record(activity_log.get(today_key, {}))
+    pool_counts = get_pool_counts()
+    week_reviewed = 0
+    week_mastered = 0
+    week_active_days = 0
+
+    for day, record in activity_log.items():
+        record_date = parse_iso_date(day)
+
+        if record_date is None or record_date < week_start or record_date > today:
+            continue
+
+        normalized_record = normalize_activity_record(record)
+        quiz_count = normalized_record.get("quiz_count", 0)
+        week_reviewed += quiz_count
+        week_mastered += normalized_record.get("master_added", 0)
+
+        if quiz_count > 0:
+            week_active_days += 1
+
+    master_count = pool_counts["master_count"]
+    next_master_target = get_next_master_target(master_count)
+    remaining_to_target = max(0, next_master_target - master_count)
+
+    return {
+        "today_reviewed": today_record.get("quiz_count", 0),
+        "today_wrong_added": today_record.get("wrong_added", 0),
+        "today_mastered": today_record.get("master_added", 0),
+        "today_retry_count": today_record.get("retry_count", 0),
+        "week_reviewed": week_reviewed,
+        "week_mastered": week_mastered,
+        "week_active_days": week_active_days,
+        "master_count": master_count,
+        "next_master_target": next_master_target,
+        "remaining_to_target": remaining_to_target,
+        "wrong_count": pool_counts["wrong_count"],
+        "review_count": pool_counts["review_count"],
+        "next_step_advice": build_post_quiz_next_step_advice(
+            today_record.get("quiz_count", 0),
+            pool_counts["wrong_count"],
+            pool_counts["review_count"],
+            today_record.get("master_added", 0),
+        ),
+    }
+
+
+def format_master_target_progress(summary):
+    master_count = summary["master_count"]
+    next_target = summary["next_master_target"]
+
+    if master_count > 1000:
+        return "你已经掌握超过 1000 句，当前重点是保持复习节奏。"
+
+    return f"master {master_count} 句｜距离 {next_target} 句还差 {summary['remaining_to_target']} 句"
+
+
+def print_long_term_progress_summary(summary):
+    print_card_title("长期进度", icon="📈")
+    print(
+        f"今日：复习 {summary['today_reviewed']} 题｜"
+        f"新增错题 {summary['today_wrong_added']} 句｜"
+        f"进入 master {summary['today_mastered']} 句｜"
+        f"重答 {summary['today_retry_count']} 次"
+    )
+    print(
+        f"本周：复习 {summary['week_reviewed']} 题｜"
+        f"学习 {summary['week_active_days']} 天｜"
+        f"进入 master {summary['week_mastered']} 句"
+    )
+    print(f"累计：{format_master_target_progress(summary)}")
+    print_blank_line()
+    print("下一步：")
+    print(summary["next_step_advice"])
+
+
+def print_post_quiz_progress_feedback():
+    print_long_term_progress_summary(build_long_term_progress_summary())
+
+
 def print_round_summary(round_summary):
     pool_counts = get_pool_counts()
     print_card_title("本轮复习小结", icon="✅")
@@ -2867,6 +2993,7 @@ def print_quiz_end_summary(
         retry_count,
     )
     print_round_summary(round_summary)
+    print_post_quiz_progress_feedback()
 
 
 def format_quiz_index(index, count, loop=False):
