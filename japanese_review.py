@@ -3434,17 +3434,16 @@ def print_menu():
     print_blank_line()
     print("请选择功能：")
     print_blank_line()
-    print("1. 普通 Quiz")
+    print("1. 普通 Quiz（可将熟句移入 master）")
     print("2. 错题 Quiz")
-    print("3. 完全掌握确认")
-    print("4. 快速添加句子")
-    print("5. 导入句子 (input/sentences.txt)")
-    print("6. 备份数据")
-    print("7. 重置 / 清空当前状态")
-    print("8. 今日学习面板 (--today)")
-    print("9. 三池统计面板 (--stats)")
-    print("10. 查看复习建议 (--plan)")
-    print("11. 查看学习趋势 (--trend)")
+    print("3. 快速添加句子")
+    print("4. 导入句子 (input/sentences.txt)")
+    print("5. 备份数据")
+    print("6. 重置 / 清空当前状态")
+    print("7. 今日学习面板 (--today)")
+    print("8. 三池统计面板 (--stats)")
+    print("9. 查看复习建议 (--plan)")
+    print("10. 查看学习趋势 (--trend)")
     print("0. 退出")
     print_blank_line()
     print("0 / q：退出")
@@ -3544,6 +3543,8 @@ def run_menu_regular_quiz():
     while True:
         print_quiz_menu("普通 Quiz")
         print("普通 Quiz：")
+        print("答对且正确度很高时，可以确认移入 master。")
+        print_blank_line()
         print("1. 随机抽题")
         print("2. 指定数量")
         print("3. 指定标签")
@@ -3628,19 +3629,6 @@ def run_menu_wrong_quiz():
             return True
 
         print_warning("请输入有效选项。")
-
-
-def run_menu_mastery_quiz():
-    print_header("📘 日语复习工具", "完全掌握确认")
-    print_warning("该入口会进入普通 Quiz。正确度很高且自评掌握时，可确认移入 master。")
-    count, canceled = read_positive_int_from_menu("请输入抽题数量，回车默认 1：", 1)
-
-    if not canceled and count:
-        speak_enabled = ask_menu_speak_enabled()
-        run_quiz(count, speak_enabled=speak_enabled)
-        return True
-
-    return False
 
 
 def run_menu_add():
@@ -3733,25 +3721,23 @@ def run_menu_action(choice):
     elif choice == "2":
         return run_menu_wrong_quiz()
     elif choice == "3":
-        return run_menu_mastery_quiz()
-    elif choice == "4":
         return run_menu_add()
-    elif choice == "5":
+    elif choice == "4":
         return run_menu_import()
-    elif choice == "6":
+    elif choice == "5":
         return run_menu_backup()
-    elif choice == "7":
+    elif choice == "6":
         return run_menu_reset()
-    elif choice == "8":
+    elif choice == "7":
         run_today()
         return True
-    elif choice == "9":
+    elif choice == "8":
         run_stats()
         return True
-    elif choice == "10":
+    elif choice == "9":
         run_plan()
         return True
-    elif choice == "11":
+    elif choice == "10":
         days, canceled = read_trend_days_from_menu()
 
         if canceled:
@@ -3764,7 +3750,7 @@ def run_menu_action(choice):
 
 
 def run_menu():
-    valid_choices = {str(number) for number in range(1, 12)}
+    valid_choices = {str(number) for number in range(1, 11)}
 
     while True:
         print_menu()
