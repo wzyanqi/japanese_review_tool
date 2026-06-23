@@ -1154,17 +1154,17 @@ def archive_and_clear_input():
 
 def ask_clear_input():
     while True:
-        answer = input("是否清空 input/sentences.txt？y/n：").strip().lower()
+        answer = input("是否清空 input/sentences.txt？y/n，输入 q 取消：")
 
-        if answer == "y":
+        if is_yes_input(answer):
             archive_and_clear_input()
             return
 
-        if answer == "n":
+        if is_no_input(answer) or is_quit_input(answer):
             print_warning("已保留 input/sentences.txt")
             return
 
-        print_warning("请输入 y 或 n。")
+        print_warning("请输入 y、n 或 q。")
 
 
 def print_add_usage():
@@ -2750,23 +2750,23 @@ def run_check():
 def ask_self_assessment():
     while True:
         print(color_text("这题掌握了吗？y/n，输入 q 退出：", CYAN))
-        assessment = input("> ").strip().lower()
+        assessment = normalize_control_input(input("> "))
 
-        if assessment in ("y", "n", "q", "quit"):
+        if assessment in {"y", "n", "q"}:
             return assessment
 
-        print_warning("请输入 y、n、q 或 quit。")
+        print_warning("请输入 y、n 或 q。")
 
 
 def ask_mark_mastered():
     while True:
         print(color_text("这题正确度很高，是否标记为完全掌握并加入 mastered.md？y/n，输入 q 退出：", CYAN))
-        answer = input("> ").strip().lower()
+        answer = normalize_control_input(input("> "))
 
-        if answer in ("y", "n", "q", "quit"):
+        if answer in {"y", "n", "q"}:
             return answer
 
-        print_warning("请输入 y、n、q 或 quit。")
+        print_warning("请输入 y、n 或 q。")
 
 
 def print_quiz_summary(
@@ -3145,7 +3145,7 @@ def run_retry_once(sentence, review_data, speak_enabled=False, voice="Kyoko", sp
     retry_answer = input("> ").strip()
     print_debug_input(retry_answer)
 
-    if retry_answer.lower() in ("q", "quit"):
+    if is_quit_input(retry_answer):
         return True, False
 
     similarity_result = build_similarity_result(retry_answer, sentence, review_data)
@@ -3333,7 +3333,7 @@ def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enable
 
         answer = print_quiz_prompt(index, count, sentence, loop=loop)
 
-        if answer.lower() in ("q", "quit"):
+        if is_quit_input(answer):
             print_quiz_end_summary(
                 asked_count - 1,
                 mastered_count,
@@ -3355,7 +3355,7 @@ def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enable
 
         assessment = ask_self_assessment()
 
-        if assessment in ("q", "quit"):
+        if assessment == "q":
             print_quiz_end_summary(
                 asked_count,
                 mastered_count,
@@ -3373,7 +3373,7 @@ def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enable
             if similarity_result["score"] >= 95:
                 mastery_answer = ask_mark_mastered()
 
-                if mastery_answer in ("q", "quit"):
+                if mastery_answer == "q":
                     print_quiz_end_summary(
                         asked_count,
                         mastered_count,
@@ -3512,7 +3512,7 @@ def run_wrong_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enabled=
 
         answer = print_quiz_prompt(index, count, entry, wrong_mode=True, loop=loop)
 
-        if answer.lower() in ("q", "quit"):
+        if is_quit_input(answer):
             save_wrong_book_entries(all_entries)
             print_quiz_end_summary(
                 asked_count - 1,
@@ -3536,7 +3536,7 @@ def run_wrong_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enabled=
 
         assessment = ask_self_assessment()
 
-        if assessment in ("q", "quit"):
+        if assessment == "q":
             save_wrong_book_entries(all_entries)
             print_quiz_end_summary(
                 asked_count,
@@ -3631,8 +3631,12 @@ def run_quiz(count, wrong_only=False, tag=None, loop=False, retry_wrong=True, sp
         run_regular_quiz(count, tag, loop, retry_wrong, speak_enabled, voice)
 
 
+def normalize_control_input(value):
+    return unicodedata.normalize("NFKC", value.strip()).lower()
+
+
 def normalize_menu_choice(value):
-    normalized = unicodedata.normalize("NFKC", value.strip()).lower()
+    normalized = normalize_control_input(value)
     compacted = normalized.replace(" ", "")
 
     if compacted.isdigit():
@@ -3642,7 +3646,15 @@ def normalize_menu_choice(value):
 
 
 def is_quit_input(value):
-    return normalize_menu_choice(value) in {"q", "quit"}
+    return normalize_control_input(value) == "q"
+
+
+def is_yes_input(value):
+    return normalize_control_input(value) == "y"
+
+
+def is_no_input(value):
+    return normalize_control_input(value) == "n"
 
 
 def read_menu_input(prompt):
@@ -3754,13 +3766,13 @@ def confirm_menu_action(prompt):
     while True:
         answer = read_menu_choice(prompt)
 
-        if answer == "y":
+        if is_yes_input(answer):
             return True
 
-        if answer in {"n", "0"} or is_quit_input(answer):
+        if is_no_input(answer) or answer == "0" or is_quit_input(answer):
             return False
 
-        print_warning("请输入 y 或 n。")
+        print_warning("请输入 y、n 或 q。")
 
 
 def ask_menu_speak_enabled():
@@ -3822,7 +3834,7 @@ def run_menu_regular_quiz():
         if choice == "3":
             tag = read_menu_input("请输入标签：")
 
-            if tag == "0" or is_quit_input(tag):
+            if normalize_menu_choice(tag) == "0" or is_quit_input(tag):
                 return False
 
             if not tag:
