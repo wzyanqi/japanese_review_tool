@@ -3668,23 +3668,93 @@ def read_menu_choice(prompt):
     return normalize_menu_choice(read_menu_input(prompt))
 
 
-def print_menu():
-    print_header("📘 日语复习工具", "菜单模式")
-    print_today_recommendation(build_start_recommendation())
-    print_blank_line()
-    print("请选择功能：")
-    print_blank_line()
+def get_today_activity_summary():
+    activity_log = load_activity_log()
+    today_key = date.today().isoformat()
+    today_record = normalize_activity_record(activity_log.get(today_key, {}))
+
+    return {
+        "today_reviewed": today_record.get("quiz_count", 0),
+        "today_mastered": today_record.get("master_added", 0),
+        "today_wrong_added": today_record.get("wrong_added", 0),
+    }
+
+
+def print_menu_recommendation(recommendation):
+    print_card_title("今日建议", icon="📌")
+    print(recommendation["message"])
+
+    if recommendation.get("extra_message"):
+        print(recommendation["extra_message"])
+
+    estimated_minutes = recommendation.get("estimated_minutes", 0)
+
+    if estimated_minutes:
+        print(f"预计用时：{estimated_minutes} 分钟。")
+
+
+def print_menu_today_status(pool_counts, today_activity):
+    print_card_title("今日状态", icon="📊")
+    print(
+        f"review {pool_counts['review_count']} 句｜"
+        f"wrong {pool_counts['wrong_count']} 句｜"
+        f"master {pool_counts['master_count']} 句"
+    )
+    print(
+        f"今日复习 {today_activity['today_reviewed']} 题｜"
+        f"master +{today_activity['today_mastered']}｜"
+        f"新增错题 +{today_activity['today_wrong_added']}"
+    )
+
+
+def print_menu_master_goal(pool_counts):
+    master_count = pool_counts["master_count"]
+    next_master_target = get_next_master_target(master_count)
+    remaining_to_target = max(0, next_master_target - master_count)
+    print_card_title("当前目标", icon="🎯")
+    print(
+        format_master_target_progress(
+            {
+                "master_count": master_count,
+                "next_master_target": next_master_target,
+                "remaining_to_target": remaining_to_target,
+            }
+        )
+    )
+
+
+def print_menu_actions():
     print("1. 开始今日推荐复习")
+    print_blank_line()
     print("2. 普通 Quiz")
     print("3. 错题 Quiz")
     print("4. 快速添加句子")
     print("5. 批量导入 sentences.txt")
+    print_blank_line()
     print("6. 今日学习面板")
     print("7. 当前库存")
     print("8. 今天该做什么")
     print("9. 最近有没有坚持")
     print("10. 一键备份")
+    print_blank_line()
     print("0. 退出")
+
+
+def print_menu():
+    pool_counts = get_pool_counts()
+    recommendation = build_start_recommendation(pool_counts=pool_counts)
+    today_activity = get_today_activity_summary()
+
+    print_header("📘 日语复习工具", "今日首页")
+    print_menu_recommendation(recommendation)
+    print_blank_line()
+    print_menu_today_status(pool_counts, today_activity)
+    print_blank_line()
+    print_menu_master_goal(pool_counts)
+    print_blank_line()
+    print(SEPARATOR)
+    print_blank_line()
+    print_menu_actions()
     print_blank_line()
     print("0 / q：退出")
     print("数字键：选择功能")

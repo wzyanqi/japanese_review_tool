@@ -111,21 +111,50 @@ python3 japanese_review.py --menu --no-color
 python3 japanese_review.py --menu
 ```
 
-菜单顶部会显示“今日推荐”，根据 review / wrong / master 三池状态和今日新增数量，推荐普通 Quiz、错题 Quiz 或新增句子。
+V16.0 起，`--menu` 首页重排为 Console 今日首页。首页会优先显示：
+
+- 今日建议
+- review / wrong / master 三池状态
+- 今日复习进度
+- 当前 master 目标
+- 固定菜单入口
+
+示例：
+
+```text
+📘 日语复习工具｜今日首页
+────────────────────────────
+
+📌 今日建议
+wrong 池还有 6 句，建议先做错题 Quiz 5 题。
+预计用时：5 分钟。
+
+📊 今日状态
+review 32 句｜wrong 6 句｜master 68 句
+今日复习 8 题｜master +2｜新增错题 +1
+
+🎯 当前目标
+master 68 句｜距离 100 句还差 32 句
+```
+
+菜单编号保持稳定，不会根据当前状态变化。
 
 当前菜单：
 
 ```text
 1. 开始今日推荐复习
+
 2. 普通 Quiz
 3. 错题 Quiz
 4. 快速添加句子
 5. 批量导入 sentences.txt
+
 6. 今日学习面板
 7. 当前库存
 8. 今天该做什么
 9. 最近有没有坚持
 10. 一键备份
+
 0. 退出
 ```
 
