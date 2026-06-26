@@ -68,9 +68,12 @@ python3 japanese_review.py --add "今日は忙しいです。" "今天很忙。"
 python3 japanese_review.py --add "仕事が終わったら、連絡します。" "工作结束后，我会联系你。" --tag "工作" --grammar "たら" --words "仕事, 終わる, 連絡する" --note "たら 表示某事完成后。"
 python3 japanese_review.py --quiz
 python3 japanese_review.py --quiz --count 5
+python3 japanese_review.py --quiz --count 5 --clean
 python3 japanese_review.py --quiz --loop
+python3 japanese_review.py --quiz --loop --clean
 python3 japanese_review.py --quiz --wrong
 python3 japanese_review.py --quiz --wrong --count 5
+python3 japanese_review.py --quiz --wrong --count 5 --clean
 python3 japanese_review.py --quiz --wrong --loop
 python3 japanese_review.py --quiz --tag 工作 --count 5
 python3 japanese_review.py --quiz --wrong --tag 工作 --count 5
@@ -233,6 +236,26 @@ python3 japanese_review.py --quiz --wrong --loop
 python3 japanese_review.py --quiz --tag 工作 --count 5
 python3 japanese_review.py --quiz --wrong --tag 工作 --count 5
 ```
+
+### 专注清屏模式
+
+如果希望每道题像单独卡片一样显示，可以使用：
+
+```bash
+python3 japanese_review.py --quiz --count 5 --clean
+python3 japanese_review.py --quiz --wrong --count 5 --clean
+python3 japanese_review.py --quiz --loop --clean
+```
+
+开启后：
+
+- 每题开始前会清空屏幕
+- 提交答案后的参考答案、正确度和差异提示不会被清掉
+- 自评完成后，进入下一题前才清屏
+- 答错后的“再练一次”开始前也会清屏
+- Quiz 结束页不会清屏，方便查看本轮小结和长期进度
+
+菜单模式中启动 Quiz 时，默认启用专注清屏模式。命令行直接运行 Quiz 时，需要显式添加 `--clean`。
 
 Quiz 会显示中文意思，让你输入日语。输入后会显示：
 

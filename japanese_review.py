@@ -1,6 +1,7 @@
 import argparse
 import csv
 import json
+import os
 import random
 import shutil
 import subprocess
@@ -62,6 +63,20 @@ def set_color_enabled(enabled):
 def set_debug_input_enabled(enabled):
     global DEBUG_INPUT
     DEBUG_INPUT = enabled
+
+
+def clear_console():
+    command = "cls" if os.name == "nt" else "clear"
+
+    try:
+        os.system(command)
+    except OSError:
+        pass
+
+
+def maybe_clear_console(clean):
+    if clean:
+        clear_console()
 
 
 def configure_console_encoding():
@@ -3136,7 +3151,15 @@ def print_quiz_answer(answer, sentence, similarity_result):
     print("")
 
 
-def run_retry_once(sentence, review_data, speak_enabled=False, voice="Kyoko", speak_state=None):
+def run_retry_once(
+    sentence,
+    review_data,
+    speak_enabled=False,
+    voice="Kyoko",
+    speak_state=None,
+    clean=False,
+):
+    maybe_clear_console(clean)
     print_card_title("再练一次")
     print(color_text("🇨🇳 中文：", CYAN))
     print(color_text(sentence["chinese"], CYAN))
@@ -3298,7 +3321,15 @@ def choose_next_wrong_question(entries, last_japanese=None):
     return random.choices(candidates, weights=weights, k=1)[0]
 
 
-def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enabled=False, voice="Kyoko"):
+def run_regular_quiz(
+    count,
+    tag=None,
+    loop=False,
+    retry_wrong=True,
+    speak_enabled=False,
+    voice="Kyoko",
+    clean=False,
+):
     sentences = load_quiz_sentences(OUTPUT_FILE)
     sentences = filter_sentences_by_tag(sentences, tag)
 
@@ -3309,7 +3340,8 @@ def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enable
             print_warning("没有可抽查的句子，请先添加句子。")
         return
 
-    print_header("📘 日语复习工具", "Quiz 模式")
+    if not clean:
+        print_header("📘 日语复习工具", "Quiz 模式")
     asked_count = 0
     mastered_count = 0
     new_wrong_count = 0
@@ -3331,6 +3363,7 @@ def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enable
         last_japanese = sentence["japanese"]
         asked_count += 1
 
+        maybe_clear_console(clean)
         answer = print_quiz_prompt(index, count, sentence, loop=loop)
 
         if is_quit_input(answer):
@@ -3440,6 +3473,7 @@ def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enable
                     speak_enabled,
                     voice,
                     speak_state,
+                    clean=clean,
                 )
 
                 if retried:
@@ -3474,7 +3508,15 @@ def run_regular_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enable
     )
 
 
-def run_wrong_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enabled=False, voice="Kyoko"):
+def run_wrong_quiz(
+    count,
+    tag=None,
+    loop=False,
+    retry_wrong=True,
+    speak_enabled=False,
+    voice="Kyoko",
+    clean=False,
+):
     all_entries = load_wrong_book_entries()
     entries = filter_sentences_by_tag(all_entries, tag)
 
@@ -3485,7 +3527,8 @@ def run_wrong_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enabled=
             print_warning("目前没有错题，可以先进行普通 quiz。")
         return
 
-    print_header("📘 日语复习工具", "错题 Quiz 模式")
+    if not clean:
+        print_header("📘 日语复习工具", "错题 Quiz 模式")
     asked_count = 0
     mastered_count = 0
     graduated_count = 0
@@ -3510,6 +3553,7 @@ def run_wrong_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enabled=
         last_japanese = entry["japanese"]
         asked_count += 1
 
+        maybe_clear_console(clean)
         answer = print_quiz_prompt(index, count, entry, wrong_mode=True, loop=loop)
 
         if is_quit_input(answer):
@@ -3589,6 +3633,7 @@ def run_wrong_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enabled=
                 speak_enabled,
                 voice,
                 speak_state,
+                clean=clean,
             )
 
             if retried:
@@ -3621,14 +3666,23 @@ def run_wrong_quiz(count, tag=None, loop=False, retry_wrong=True, speak_enabled=
     )
 
 
-def run_quiz(count, wrong_only=False, tag=None, loop=False, retry_wrong=True, speak_enabled=False, voice="Kyoko"):
+def run_quiz(
+    count,
+    wrong_only=False,
+    tag=None,
+    loop=False,
+    retry_wrong=True,
+    speak_enabled=False,
+    voice="Kyoko",
+    clean=False,
+):
     if loop and count != 1:
         print_warning("已启用 --loop，将忽略 --count。")
 
     if wrong_only:
-        run_wrong_quiz(count, tag, loop, retry_wrong, speak_enabled, voice)
+        run_wrong_quiz(count, tag, loop, retry_wrong, speak_enabled, voice, clean)
     else:
-        run_regular_quiz(count, tag, loop, retry_wrong, speak_enabled, voice)
+        run_regular_quiz(count, tag, loop, retry_wrong, speak_enabled, voice, clean)
 
 
 def normalize_control_input(value):
@@ -3865,6 +3919,7 @@ def run_menu_recommended_quiz():
         recommendation["quiz_count"],
         wrong_only=mode == "wrong",
         speak_enabled=speak_enabled,
+        clean=True,
     )
     return True
 
@@ -3885,7 +3940,7 @@ def run_menu_regular_quiz():
 
         if not choice or choice == "1":
             speak_enabled = ask_menu_speak_enabled()
-            run_quiz(1, speak_enabled=speak_enabled)
+            run_quiz(1, speak_enabled=speak_enabled, clean=True)
             return True
 
         if choice == "0" or is_quit_input(choice):
@@ -3896,7 +3951,7 @@ def run_menu_regular_quiz():
 
             if not canceled and count:
                 speak_enabled = ask_menu_speak_enabled()
-                run_quiz(count, speak_enabled=speak_enabled)
+                run_quiz(count, speak_enabled=speak_enabled, clean=True)
                 return True
 
             return False
@@ -3915,7 +3970,7 @@ def run_menu_regular_quiz():
 
             if not canceled and count:
                 speak_enabled = ask_menu_speak_enabled()
-                run_quiz(count, tag=tag, speak_enabled=speak_enabled)
+                run_quiz(count, tag=tag, speak_enabled=speak_enabled, clean=True)
                 return True
 
             return False
@@ -3937,7 +3992,7 @@ def run_menu_wrong_quiz():
 
         if not choice or choice == "1":
             speak_enabled = ask_menu_speak_enabled()
-            run_quiz(1, wrong_only=True, speak_enabled=speak_enabled)
+            run_quiz(1, wrong_only=True, speak_enabled=speak_enabled, clean=True)
             return True
 
         if choice == "0" or is_quit_input(choice):
@@ -3948,14 +4003,14 @@ def run_menu_wrong_quiz():
 
             if not canceled and count:
                 speak_enabled = ask_menu_speak_enabled()
-                run_quiz(count, wrong_only=True, speak_enabled=speak_enabled)
+                run_quiz(count, wrong_only=True, speak_enabled=speak_enabled, clean=True)
                 return True
 
             return False
 
         if choice == "3":
             speak_enabled = ask_menu_speak_enabled()
-            run_quiz(1, wrong_only=True, loop=True, speak_enabled=speak_enabled)
+            run_quiz(1, wrong_only=True, loop=True, speak_enabled=speak_enabled, clean=True)
             return True
 
         print_warning("请输入有效选项。")
@@ -4112,6 +4167,7 @@ def parse_args():
     parser.add_argument("--no-color", action="store_true", help="关闭 ANSI 彩色输出")
     parser.add_argument("--debug-input", action="store_true", help="显示 Quiz 输入调试信息")
     parser.add_argument("--no-retry", action="store_true", help="答错后不进行重答")
+    parser.add_argument("--clean", action="store_true", help="Quiz 专注清屏模式，每题开始前清屏")
     parser.add_argument("--speak", action="store_true", help="Quiz 中朗读日语参考答案")
     parser.add_argument("--voice", default="Kyoko", help="朗读语音，默认 Kyoko")
     parser.add_argument("--quiz", action="store_true", help="进入随机抽查模式")
@@ -4201,6 +4257,7 @@ def main():
             retry_wrong=not args.no_retry,
             speak_enabled=args.speak,
             voice=args.voice,
+            clean=args.clean,
         )
     else:
         run_review(args.no_prompt)
