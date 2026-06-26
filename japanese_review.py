@@ -6,6 +6,7 @@ import random
 import shutil
 import subprocess
 import sys
+import time
 import unicodedata
 from difflib import SequenceMatcher
 from datetime import date, datetime, timedelta
@@ -33,6 +34,7 @@ WRONG_BOOK_CSV = EXPORT_DIR / "wrong_book.csv"
 MASTERED_CSV = EXPORT_DIR / "mastered.csv"
 BACKUP_DIR = BASE_DIR / "backup"
 GRADUATION_THRESHOLD = 3
+CLEAR_DELAY_SECONDS = 1.0
 SEPARATOR = "────────────────────────────"
 USE_COLOR = True
 DEBUG_INPUT = False
@@ -74,9 +76,39 @@ def clear_console():
         pass
 
 
-def maybe_clear_console(clean):
-    if clean:
-        clear_console()
+def maybe_clear_console(clean, delay_seconds=0, message=""):
+    if not clean:
+        return
+
+    if delay_seconds > 0:
+        print_blank_line()
+
+        if message:
+            print(color_text(message, GRAY))
+
+        time.sleep(delay_seconds)
+
+    clear_console()
+
+
+def clear_before_next_question(clean, current_index):
+    if current_index <= 1:
+        maybe_clear_console(clean)
+        return
+
+    maybe_clear_console(
+        clean,
+        delay_seconds=CLEAR_DELAY_SECONDS,
+        message="1 秒后进入下一题...",
+    )
+
+
+def clear_before_retry(clean):
+    maybe_clear_console(
+        clean,
+        delay_seconds=CLEAR_DELAY_SECONDS,
+        message="1 秒后进入再练一次...",
+    )
 
 
 def configure_console_encoding():
@@ -3259,7 +3291,7 @@ def run_retry_once(
     speak_state=None,
     clean=False,
 ):
-    maybe_clear_console(clean)
+    clear_before_retry(clean)
     print_card_title("再练一次")
     print(color_text("🇨🇳 中文：", CYAN))
     print(color_text(sentence["chinese"], CYAN))
@@ -3463,7 +3495,7 @@ def run_regular_quiz(
         last_japanese = sentence["japanese"]
         asked_count += 1
 
-        maybe_clear_console(clean)
+        clear_before_next_question(clean, index)
         answer = print_quiz_prompt(index, count, sentence, loop=loop)
 
         if is_quit_input(answer):
@@ -3653,7 +3685,7 @@ def run_wrong_quiz(
         last_japanese = entry["japanese"]
         asked_count += 1
 
-        maybe_clear_console(clean)
+        clear_before_next_question(clean, index)
         answer = print_quiz_prompt(index, count, entry, wrong_mode=True, loop=loop)
 
         if is_quit_input(answer):
