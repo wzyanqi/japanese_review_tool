@@ -31,6 +31,8 @@ python japanese_review.py --menu
 
 在 `input/sentences.txt` 中，每行一条句子，用 `|` 分隔字段。
 
+你可以一次把 30 / 50 句放进 `input/sentences.txt`。批量导入成功的句子会自动从 input 中移除，未导入或有问题的行会继续保留，方便下次处理。
+
 支持格式：
 
 ```text
@@ -62,7 +64,6 @@ python japanese_review.py --menu
 ```bash
 python3 japanese_review.py --menu
 python3 japanese_review.py
-python3 japanese_review.py --no-prompt
 python3 japanese_review.py --clear-input
 python3 japanese_review.py --add "今日は忙しいです。" "今天很忙。"
 python3 japanese_review.py --add "仕事が終わったら、連絡します。" "工作结束后，我会联系你。" --tag "工作" --grammar "たら" --words "仕事, 終わる, 連絡する" --note "たら 表示某事完成后。"
@@ -454,21 +455,26 @@ python3 japanese_review.py --reset
 python3 japanese_review.py --reset --yes
 ```
 
-## 输入区清理
+## 输入区整理
 
-普通导入结束后，程序会询问是否清空 `input/sentences.txt`。如果选择清空，会先归档到：
+批量导入后，程序会自动从 `input/sentences.txt` 中移除已经成功导入的原始行。
+
+规则：
+
+- 成功导入到 review 池的行会被删除
+- 格式错误行会保留
+- 重复句子会保留
+- 已在 review / wrong / master 中被跳过的句子会保留
+- 如果全部有效句子都成功导入，`input/sentences.txt` 会被自动清空
+- 自动改写前会先归档原始输入文件到 `input/archive/`
+
+归档文件示例：
 
 ```text
 input/archive/YYYY-MM-DD_sentences.txt
 ```
 
-不想询问：
-
-```bash
-python3 japanese_review.py --no-prompt
-```
-
-只归档并清空输入文件：
+手动归档并清空整个输入区仍可使用：
 
 ```bash
 python3 japanese_review.py --clear-input

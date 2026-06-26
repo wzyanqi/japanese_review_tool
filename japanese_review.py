@@ -429,58 +429,81 @@ def print_debug_input(answer):
     print(f"normalize 后长度：{len(normalized_answer)}")
 
 
-def read_sentences(input_file):
-    sentences = []
-    total_lines = 0
-    error_count = 0
-    format_errors = []
+def parse_sentence_line(line, line_number):
+    parts = [part.strip() for part in line.split("|")]
+
+    if len(parts) < 2:
+        return None, f"第 {line_number} 行：缺少 | 分隔符"
+
+    if len(parts) > 6:
+        return None, f"第 {line_number} 行：字段过多，最多支持 6 个字段"
+
+    japanese = parts[0]
+    chinese = parts[1]
+    tag = parts[2] if len(parts) >= 3 else ""
+    grammar = parts[3] if len(parts) >= 4 else ""
+    words = parts[4] if len(parts) >= 5 else ""
+    note = parts[5] if len(parts) >= 6 else ""
+
+    if not japanese or not chinese:
+        return None, f"第 {line_number} 行：日语或中文内容为空"
+
+    return (
+        {
+            "japanese": japanese,
+            "chinese": chinese,
+            "tag": normalize_optional_text(tag),
+            "grammar": normalize_optional_text(grammar),
+            "words": normalize_optional_text(words),
+            "note": normalize_optional_text(note),
+        },
+        "",
+    )
+
+
+def read_sentence_items(input_file):
+    items = []
 
     if not input_file.exists():
-        format_errors.append(f"找不到输入文件：{display_path(input_file)}")
-        return sentences, total_lines, error_count, format_errors
+        return items, [f"找不到输入文件：{display_path(input_file)}"]
 
     with input_file.open("r", encoding=TEXT_ENCODING) as file:
         for line_number, raw_line in enumerate(file, start=1):
-            total_lines += 1
             line = raw_line.strip()
 
-            if not line:
-                continue
+            item = {
+                "line_number": line_number,
+                "raw_line": raw_line,
+                "line": line,
+                "sentence": None,
+                "error": "",
+                "is_blank": not line,
+            }
 
-            parts = [part.strip() for part in line.split("|")]
+            if line:
+                sentence, error = parse_sentence_line(line, line_number)
+                item["sentence"] = sentence
+                item["error"] = error
 
-            if len(parts) < 2:
-                format_errors.append(f"第 {line_number} 行：缺少 | 分隔符")
-                error_count += 1
-                continue
+            items.append(item)
 
-            if len(parts) > 6:
-                format_errors.append(f"第 {line_number} 行：字段过多，最多支持 6 个字段")
-                error_count += 1
-                continue
+    return items, []
 
-            japanese = parts[0]
-            chinese = parts[1]
-            tag = parts[2] if len(parts) >= 3 else ""
-            grammar = parts[3] if len(parts) >= 4 else ""
-            words = parts[4] if len(parts) >= 5 else ""
-            note = parts[5] if len(parts) >= 6 else ""
 
-            if not japanese or not chinese:
-                format_errors.append(f"第 {line_number} 行：日语或中文内容为空")
-                error_count += 1
-                continue
-
-            sentences.append(
-                {
-                    "japanese": japanese,
-                    "chinese": chinese,
-                    "tag": normalize_optional_text(tag),
-                    "grammar": normalize_optional_text(grammar),
-                    "words": normalize_optional_text(words),
-                    "note": normalize_optional_text(note),
-                }
-            )
+def read_sentences(input_file):
+    items, read_errors = read_sentence_items(input_file)
+    sentences = [
+        item["sentence"]
+        for item in items
+        if item["sentence"] is not None
+    ]
+    total_lines = len(items)
+    format_errors = read_errors + [
+        item["error"]
+        for item in items
+        if item["error"]
+    ]
+    error_count = len(format_errors)
 
     return sentences, total_lines, error_count, format_errors
 
@@ -1142,6 +1165,58 @@ def get_unique_input_archive_file():
         index += 1
 
 
+def archive_input_content(original_content):
+    INPUT_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+    archive_file = get_unique_input_archive_file()
+    archive_file.write_text(original_content, encoding=TEXT_ENCODING)
+    return archive_file
+
+
+def rewrite_input_after_import(input_file, items, imported_line_numbers):
+    original_nonblank_lines = sum(
+        1 for item in items if item["raw_line"].strip()
+    )
+    remaining_items = [
+        item
+        for item in items
+        if item["line_number"] not in imported_line_numbers
+    ]
+    remaining_content = "".join(item["raw_line"] for item in remaining_items)
+    remaining_nonblank_lines = sum(
+        1 for item in remaining_items if item["raw_line"].strip()
+    )
+    result = {
+        "rewritten": False,
+        "removed_lines": 0,
+        "remaining_lines": original_nonblank_lines,
+        "archive_file": None,
+        "cleared": False,
+    }
+
+    if not imported_line_numbers:
+        return result
+
+    try:
+        original_content = input_file.read_text(encoding=TEXT_ENCODING)
+
+        if not original_content.strip():
+            return result
+
+        archive_file = archive_input_content(original_content)
+        content_to_write = "" if not remaining_content.strip() else remaining_content
+        input_file.write_text(content_to_write, encoding=TEXT_ENCODING)
+    except OSError as error:
+        print_error(f"归档或整理 input/sentences.txt 失败，已保留原文件。{error}")
+        return result
+
+    result["rewritten"] = True
+    result["removed_lines"] = len(imported_line_numbers)
+    result["remaining_lines"] = remaining_nonblank_lines
+    result["archive_file"] = archive_file
+    result["cleared"] = not content_to_write
+    return result
+
+
 def archive_and_clear_input():
     if not INPUT_FILE.exists():
         print_error(f"找不到输入文件：{display_path(INPUT_FILE)}")
@@ -1153,9 +1228,7 @@ def archive_and_clear_input():
         print_warning("input/sentences.txt 已经是空的，无需清理。")
         return
 
-    INPUT_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
-    archive_file = get_unique_input_archive_file()
-    archive_file.write_text(original_content, encoding=TEXT_ENCODING)
+    archive_file = archive_input_content(original_content)
     INPUT_FILE.write_text("", encoding=TEXT_ENCODING)
 
     print_success("输入文件已清理")
@@ -1247,12 +1320,25 @@ def run_add(add_values, tag="", grammar="", words="", note=""):
 
 def run_review(no_prompt=False):
     print_header("📘 日语复习工具", "普通追加模式")
-    sentences, total_lines, error_count, format_errors = read_sentences(INPUT_FILE)
+    items, read_errors = read_sentence_items(INPUT_FILE)
+    total_lines = len(items)
+    format_errors = read_errors + [
+        item["error"]
+        for item in items
+        if item["error"]
+    ]
+    error_count = len(format_errors)
     new_sentences = []
     skipped_sentences = []
     pending_review_sentences = set()
+    imported_line_numbers = set()
 
-    for sentence in sentences:
+    for item in items:
+        if item["is_blank"] or item["error"]:
+            continue
+
+        sentence = item["sentence"]
+
         if sentence["japanese"] in pending_review_sentences:
             print_warning(f"该句已在本次导入中出现，跳过重复：{sentence['japanese']}")
             skipped_sentences.append(
@@ -1276,6 +1362,7 @@ def run_review(no_prompt=False):
 
         pending_review_sentences.add(sentence["japanese"])
         new_sentences.append(sentence)
+        imported_line_numbers.add(item["line_number"])
 
     review_data = load_review_data(DATA_FILE)
     reviewed_sentences = update_review_counts(new_sentences, review_data)
@@ -1288,6 +1375,11 @@ def run_review(no_prompt=False):
 
     append_review_file(OUTPUT_FILE, reviewed_sentences, review_date)
     append_review_file(daily_output_file, reviewed_sentences, review_date)
+    input_rewrite_result = rewrite_input_after_import(
+        INPUT_FILE,
+        items,
+        imported_line_numbers,
+    )
 
     if reviewed_sentences:
         print_success(f"已追加到复习文件：{display_path(OUTPUT_FILE)}")
@@ -1317,11 +1409,19 @@ def run_review(no_prompt=False):
             ("成功新增", f"{len(reviewed_sentences)} 句"),
             ("跳过重复", f"{len(skipped_sentences)} 句"),
             ("格式错误", f"{error_count} 行"),
+            ("已从 input/sentences.txt 移除", f"{input_rewrite_result['removed_lines']} 行"),
+            ("剩余保留", f"{input_rewrite_result['remaining_lines']} 行"),
         ]
     )
 
-    if not no_prompt:
-        ask_clear_input()
+    if input_rewrite_result["rewritten"]:
+        print_blank_line()
+        print_success(f"已归档原始输入：{display_path(input_rewrite_result['archive_file'])}")
+
+        if input_rewrite_result["cleared"]:
+            print_success("input/sentences.txt 已清空。")
+    elif not imported_line_numbers:
+        print_warning("没有成功导入新句子，input/sentences.txt 保持不变。")
 
 
 def format_percentage(numerator, denominator):
@@ -4163,7 +4263,7 @@ def parse_args():
     parser.add_argument("--add", nargs="*", metavar="文本", help="快速添加一句日语和中文意思")
     parser.add_argument("--menu", action="store_true", help="进入菜单模式")
     parser.add_argument("--clear-input", action="store_true", help="归档并清空输入文件")
-    parser.add_argument("--no-prompt", action="store_true", help="普通模式结束后不询问清空输入文件")
+    parser.add_argument("--no-prompt", action="store_true", help="兼容旧用法；普通模式已自动整理输入区")
     parser.add_argument("--no-color", action="store_true", help="关闭 ANSI 彩色输出")
     parser.add_argument("--debug-input", action="store_true", help="显示 Quiz 输入调试信息")
     parser.add_argument("--no-retry", action="store_true", help="答错后不进行重答")
