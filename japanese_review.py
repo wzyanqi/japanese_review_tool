@@ -3909,6 +3909,72 @@ def print_menu_master_goal(pool_counts):
     )
 
 
+def count_pending_input_lines():
+    if not INPUT_FILE.exists():
+        return None
+
+    try:
+        with INPUT_FILE.open("r", encoding=TEXT_ENCODING) as file:
+            return sum(1 for line in file if line.strip())
+    except OSError as error:
+        print_warning(f"读取 input/sentences.txt 失败，已跳过待处理提醒。{error}")
+        return None
+
+
+def get_today_backup_count():
+    today = date.today().isoformat()
+
+    try:
+        return len(get_today_backup_files(today))
+    except OSError as error:
+        print_warning(f"读取 backup/ 失败，已跳过备份提醒。{error}")
+        return 0
+
+
+def build_pending_items_summary():
+    pending_input_lines = count_pending_input_lines()
+    today_backup_count = get_today_backup_count()
+
+    if pending_input_lines is None:
+        input_text = "input/sentences.txt：未找到"
+    elif pending_input_lines == 0:
+        input_text = "input/sentences.txt：无待导入内容"
+    else:
+        input_text = f"input/sentences.txt：有 {pending_input_lines} 行待导入"
+
+    if today_backup_count == 0:
+        backup_text = "今日备份：尚未备份"
+    else:
+        backup_text = f"今日备份：已备份 {today_backup_count} 次"
+
+    check_text = "数据检查：建议每周运行一次 --check"
+
+    if pending_input_lines and pending_input_lines > 0:
+        advice = "建议：先处理 input，再开始今日推荐复习。"
+    elif today_backup_count == 0:
+        advice = "建议：今天学习结束后可以执行一次备份。"
+    else:
+        advice = "建议：当前没有明显待处理事项，可以直接开始复习。"
+
+    return {
+        "pending_input_lines": pending_input_lines,
+        "today_backup_count": today_backup_count,
+        "lines": [
+            input_text,
+            backup_text,
+            check_text,
+            advice,
+        ],
+    }
+
+
+def print_menu_pending_items(summary):
+    print_card_title("待处理", icon="🧭")
+
+    for line in summary["lines"]:
+        print(line)
+
+
 def print_menu_actions():
     print("1. 开始今日推荐复习")
     print_blank_line()
@@ -3930,6 +3996,7 @@ def print_menu():
     pool_counts = get_pool_counts()
     recommendation = build_start_recommendation(pool_counts=pool_counts)
     today_activity = get_today_activity_summary()
+    pending_items = build_pending_items_summary()
 
     print_header("📘 日语复习工具", "今日首页")
     print_menu_recommendation(recommendation)
@@ -3937,6 +4004,8 @@ def print_menu():
     print_menu_today_status(pool_counts, today_activity)
     print_blank_line()
     print_menu_master_goal(pool_counts)
+    print_blank_line()
+    print_menu_pending_items(pending_items)
     print_blank_line()
     print(SEPARATOR)
     print_blank_line()
