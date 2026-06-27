@@ -2898,13 +2898,16 @@ def run_check():
 
 def ask_self_assessment():
     while True:
-        print(color_text("这题掌握了吗？y/n，输入 q 退出：", CYAN))
+        print(color_text("这题掌握了吗？回车/y=掌握，n=加入错题，q=退出：", CYAN))
         assessment = normalize_control_input(input("> "))
+
+        if assessment == "":
+            return "y"
 
         if assessment in {"y", "n", "q"}:
             return assessment
 
-        print_warning("请输入 y、n 或 q。")
+        print_warning("请输入回车、y、n 或 q。")
 
 
 def ask_mark_mastered():
