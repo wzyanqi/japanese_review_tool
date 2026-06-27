@@ -2912,13 +2912,16 @@ def ask_self_assessment():
 
 def ask_mark_mastered():
     while True:
-        print(color_text("这题正确度很高，是否标记为完全掌握并加入 mastered.md？y/n，输入 q 退出：", CYAN))
+        print(color_text("这题正确度很高，是否标记为完全掌握并加入 mastered.md？回车/y=加入，n=不加入，q=退出：", CYAN))
         answer = normalize_control_input(input("> "))
+
+        if answer == "":
+            return "y"
 
         if answer in {"y", "n", "q"}:
             return answer
 
-        print_warning("请输入 y、n 或 q。")
+        print_warning("请输入回车、y、n 或 q。")
 
 
 def print_quiz_summary(
