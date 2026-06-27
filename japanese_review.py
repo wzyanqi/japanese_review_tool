@@ -34,7 +34,7 @@ WRONG_BOOK_CSV = EXPORT_DIR / "wrong_book.csv"
 MASTERED_CSV = EXPORT_DIR / "mastered.csv"
 BACKUP_DIR = BASE_DIR / "backup"
 GRADUATION_THRESHOLD = 3
-CLEAR_DELAY_SECONDS = 1.0
+CLEAR_DELAY_SECONDS = 3.0
 SEPARATOR = "────────────────────────────"
 USE_COLOR = True
 DEBUG_INPUT = False
@@ -76,17 +76,19 @@ def clear_console():
         pass
 
 
-def maybe_clear_console(clean, delay_seconds=0, message=""):
+def show_countdown_message(seconds=3, target_text="下一题"):
+    for remaining in range(seconds, 0, -1):
+        print(color_text(f"{remaining}s后进入{target_text}...", GRAY))
+        time.sleep(1)
+
+
+def maybe_clear_console(clean, countdown_seconds=0, target_text="下一题"):
     if not clean:
         return
 
-    if delay_seconds > 0:
+    if countdown_seconds > 0:
         print_blank_line()
-
-        if message:
-            print(color_text(message, GRAY))
-
-        time.sleep(delay_seconds)
+        show_countdown_message(countdown_seconds, target_text)
 
     clear_console()
 
@@ -98,16 +100,16 @@ def clear_before_next_question(clean, current_index):
 
     maybe_clear_console(
         clean,
-        delay_seconds=CLEAR_DELAY_SECONDS,
-        message="1 秒后进入下一题...",
+        countdown_seconds=int(CLEAR_DELAY_SECONDS),
+        target_text="下一题",
     )
 
 
 def clear_before_retry(clean):
     maybe_clear_console(
         clean,
-        delay_seconds=CLEAR_DELAY_SECONDS,
-        message="1 秒后进入再练一次...",
+        countdown_seconds=int(CLEAR_DELAY_SECONDS),
+        target_text="再练一次",
     )
 
 
