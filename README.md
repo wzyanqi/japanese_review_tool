@@ -390,6 +390,21 @@ python3 japanese_review.py --quiz --count 1 --debug-input
 
 macOS 可使用系统 `say` 朗读参考答案：
 
+V16.4.2 起，菜单模式下的 Quiz 会根据当前系统自动决定是否开启朗读：
+
+- 如果检测到系统支持 `say`，菜单 Quiz 默认开启日语朗读
+- 如果未检测到 `say`，菜单 Quiz 默认关闭朗读
+- 菜单模式进入普通 Quiz、错题 Quiz、今日推荐复习时，不再每次询问是否开启朗读
+- 命令行直接运行 Quiz 时，仍然需要显式添加 `--speak`
+
+菜单入口：
+
+```bash
+python3 japanese_review.py --menu
+```
+
+命令行直接运行时仍保持显式模式：
+
 ```bash
 python3 japanese_review.py --quiz --speak
 python3 japanese_review.py --quiz --wrong --speak

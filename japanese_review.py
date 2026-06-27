@@ -4109,6 +4109,17 @@ def ask_menu_speak_enabled():
     return confirm_menu_action("是否开启日语朗读？y/n：")
 
 
+def get_menu_default_speak_enabled():
+    return is_say_available()
+
+
+def print_menu_speak_status(speak_enabled):
+    if speak_enabled:
+        print(color_text("🔊 日语朗读：ON（已检测到系统 say）", CYAN))
+    else:
+        print(color_text("🔇 日语朗读：OFF（未检测到系统 say）", GRAY))
+
+
 def run_menu_recommended_quiz():
     recommendation = build_start_recommendation()
     mode = recommendation["mode"]
@@ -4120,7 +4131,8 @@ def run_menu_recommended_quiz():
         print("5. 批量导入 sentences.txt")
         return True
 
-    speak_enabled = ask_menu_speak_enabled()
+    speak_enabled = get_menu_default_speak_enabled()
+    print_menu_speak_status(speak_enabled)
     run_quiz(
         recommendation["quiz_count"],
         wrong_only=mode == "wrong",
@@ -4145,7 +4157,8 @@ def run_menu_regular_quiz():
         choice = read_menu_choice("请输入数字：")
 
         if not choice or choice == "1":
-            speak_enabled = ask_menu_speak_enabled()
+            speak_enabled = get_menu_default_speak_enabled()
+            print_menu_speak_status(speak_enabled)
             run_quiz(1, speak_enabled=speak_enabled, clean=True)
             return True
 
@@ -4156,7 +4169,8 @@ def run_menu_regular_quiz():
             count, canceled = read_positive_int_from_menu("请输入抽题数量：")
 
             if not canceled and count:
-                speak_enabled = ask_menu_speak_enabled()
+                speak_enabled = get_menu_default_speak_enabled()
+                print_menu_speak_status(speak_enabled)
                 run_quiz(count, speak_enabled=speak_enabled, clean=True)
                 return True
 
@@ -4175,7 +4189,8 @@ def run_menu_regular_quiz():
             count, canceled = read_positive_int_from_menu("请输入抽题数量，回车默认 5：", 5)
 
             if not canceled and count:
-                speak_enabled = ask_menu_speak_enabled()
+                speak_enabled = get_menu_default_speak_enabled()
+                print_menu_speak_status(speak_enabled)
                 run_quiz(count, tag=tag, speak_enabled=speak_enabled, clean=True)
                 return True
 
@@ -4197,7 +4212,8 @@ def run_menu_wrong_quiz():
         choice = read_menu_choice("请输入数字：")
 
         if not choice or choice == "1":
-            speak_enabled = ask_menu_speak_enabled()
+            speak_enabled = get_menu_default_speak_enabled()
+            print_menu_speak_status(speak_enabled)
             run_quiz(1, wrong_only=True, speak_enabled=speak_enabled, clean=True)
             return True
 
@@ -4208,14 +4224,16 @@ def run_menu_wrong_quiz():
             count, canceled = read_positive_int_from_menu("请输入抽题数量：")
 
             if not canceled and count:
-                speak_enabled = ask_menu_speak_enabled()
+                speak_enabled = get_menu_default_speak_enabled()
+                print_menu_speak_status(speak_enabled)
                 run_quiz(count, wrong_only=True, speak_enabled=speak_enabled, clean=True)
                 return True
 
             return False
 
         if choice == "3":
-            speak_enabled = ask_menu_speak_enabled()
+            speak_enabled = get_menu_default_speak_enabled()
+            print_menu_speak_status(speak_enabled)
             run_quiz(1, wrong_only=True, loop=True, speak_enabled=speak_enabled, clean=True)
             return True
 
